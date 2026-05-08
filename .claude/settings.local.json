@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(timeout 8 node server.js)",
+      "Bash(node server.js)",
+      "Bash(node -e ' *)",
+      "Bash(kill %1)",
+      "Bash(netstat -ano)",
+      "Bash(awk '{print $5}')",
+      "Bash(xargs -r -I{} taskkill /PID {} /F)",
+      "Bash(taskkill /PID 11376 /F)",
+      "Bash(cmd /c \"taskkill /PID 11376 /F\")",
+      "Bash(cmd /c \"taskkill /PID 11376 /F 2>&1\")"
+    ]
+  }
+}
