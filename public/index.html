@@ -290,9 +290,55 @@ td.date-overdue { color: var(--danger); font-weight: 600; }
   .nav-item { justify-content: center; }
   .lead-detail-body { grid-template-columns: 1fr; }
 }
+
+/* LOGIN PAGE */
+.login-overlay {
+  position: fixed; inset: 0; z-index: 9000;
+  background: linear-gradient(135deg, #0f1623 0%, #1e2d4a 100%);
+  display: flex; align-items: center; justify-content: center;
+}
+.login-card {
+  background: #fff; border-radius: 16px; padding: 40px 44px;
+  width: 100%; max-width: 400px; box-shadow: 0 24px 80px rgba(0,0,0,0.4);
+}
+.login-logo { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; justify-content: center; }
+.login-logo-icon { width: 40px; height: 40px; background: var(--accent); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+.login-logo-text { font-size: 1.4rem; font-weight: 700; color: var(--text); }
+.login-logo-text span { color: var(--accent); }
+.login-title { font-size: 1.05rem; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+.login-sub { font-size: 0.8rem; color: var(--text3); margin-bottom: 24px; }
+.login-error { background: var(--danger-light); color: var(--danger); border: 1px solid #fca5a5; border-radius: 8px; padding: 9px 13px; font-size: 0.8rem; margin-bottom: 16px; display: none; }
+.login-btn { width: 100%; padding: 11px; border-radius: 9px; border: none; background: var(--accent); color: #fff; font-family: 'DM Sans', sans-serif; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: background 0.15s; margin-top: 6px; }
+.login-btn:hover { background: #1d4ed8; }
+.login-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 </style>
 </head>
 <body>
+
+<!-- LOGIN PAGE -->
+<div class="login-overlay" id="login-overlay">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="login-logo-icon">🌊</div>
+      <div class="login-logo-text">Lead<span>Flow</span></div>
+    </div>
+    <div class="login-title">Sign in to your account</div>
+    <div class="login-sub">Enter your credentials to continue</div>
+    <div class="login-error" id="login-error"></div>
+    <div class="form-group" style="margin-bottom:12px;">
+      <label class="form-label">Username</label>
+      <input type="text" class="form-control" id="login-username" placeholder="username" autocomplete="username">
+    </div>
+    <div class="form-group" style="margin-bottom:18px;">
+      <label class="form-label">Password</label>
+      <input type="password" class="form-control" id="login-password" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="login-btn" id="login-btn" onclick="doLogin()">Sign In</button>
+  </div>
+</div>
+
+<!-- MAIN APP (hidden until authenticated) -->
+<div id="app" style="display:none;width:100%;height:100vh;flex-direction:row;">
 
 <!-- SIDEBAR -->
 <aside class="sidebar">
@@ -329,14 +375,22 @@ td.date-overdue { color: var(--danger); font-weight: 600; }
     </div>
   </div>
 
+  <div class="sidebar-section" id="admin-nav" style="display:none">
+    <div class="sidebar-label">Admin</div>
+    <div class="nav-item" onclick="showView('users')">
+      <span class="icon">🔑</span><span>Users</span>
+    </div>
+  </div>
+
   <div class="sidebar-footer">
     <div class="user-pill">
-      <div class="user-avatar">RS</div>
+      <div class="user-avatar" id="sidebar-avatar">?</div>
       <div class="user-info">
-        <div class="user-name">Rahul Sharma</div>
-        <div class="user-role">Sales Manager</div>
+        <div class="user-name" id="sidebar-name">—</div>
+        <div class="user-role" id="sidebar-role">—</div>
       </div>
     </div>
+    <button onclick="doLogout()" style="margin-top:10px;width:100%;padding:7px;border-radius:7px;border:1px solid rgba(255,255,255,0.1);background:transparent;color:rgba(255,255,255,0.45);font-family:'DM Sans',sans-serif;font-size:0.75rem;cursor:pointer;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='rgba(255,255,255,0.45)'">Sign Out</button>
   </div>
 </aside>
 
@@ -565,8 +619,27 @@ td.date-overdue { color: var(--danger); font-weight: 600; }
       </div>
     </div>
 
+    <!-- ======== USERS (Admin only) ======== -->
+    <div class="view" id="view-users">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <div></div>
+        <button class="topbar-btn primary" onclick="openUserModal()">＋ Create User</button>
+      </div>
+      <div class="panel">
+        <div class="table-wrap">
+          <table class="data-table" id="users-table">
+            <thead>
+              <tr><th>Name</th><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody id="users-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
   </div><!-- /content -->
 </div><!-- /main -->
+</div><!-- /app -->
 
 <!-- ======== LEAD MODAL (Add/Edit) ======== -->
 <div class="modal-overlay" id="lead-modal">
@@ -785,6 +858,51 @@ td.date-overdue { color: var(--danger); font-weight: 600; }
   </div>
 </div>
 
+<!-- ======== USER MODAL (Admin: Create User) ======== -->
+<div class="modal-overlay" id="user-modal">
+  <div class="modal" style="max-width:440px;">
+    <div class="modal-header">
+      <div class="modal-title">Create User</div>
+      <button class="modal-close" onclick="closeMod('user-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group full">
+          <label class="form-label">Full Name <span class="req">*</span></label>
+          <input type="text" class="form-control" id="um-name" placeholder="Jane Smith">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Username <span class="req">*</span></label>
+          <input type="text" class="form-control" id="um-username" placeholder="janesmith" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password <span class="req">*</span></label>
+          <input type="password" class="form-control" id="um-password" placeholder="••••••••" autocomplete="new-password">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email</label>
+          <input type="email" class="form-control" id="um-email" placeholder="jane@company.com">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Role</label>
+          <select class="form-control" id="um-role">
+            <option>Sales</option>
+            <option>Sales Manager</option>
+            <option>Inside Sales</option>
+            <option>Field Sales</option>
+            <option>Marketing</option>
+          </select>
+        </div>
+      </div>
+      <div id="um-error" style="color:var(--danger);font-size:0.78rem;margin-top:10px;display:none;"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeMod('user-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveUser()">Create User</button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div id="toast" style="position:fixed;bottom:20px;right:20px;background:#0f1623;color:#fff;padding:10px 18px;border-radius:9px;font-size:0.82rem;font-weight:500;z-index:9999;display:none;box-shadow:0 4px 20px rgba(0,0,0,0.3);max-width:320px;"></div>
 
@@ -794,6 +912,77 @@ let dashData = null;
 let allLeads = [];
 let allUsers = [];
 let currentDetailLead = null;
+let currentUser = null;
+
+// ========== AUTH / SESSION ==========
+function showLogin() {
+  document.getElementById('login-overlay').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+}
+function showApp() {
+  document.getElementById('login-overlay').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  // Populate sidebar user info
+  const initials = (currentUser.name || '?').split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
+  document.getElementById('sidebar-avatar').textContent = initials;
+  document.getElementById('sidebar-name').textContent   = currentUser.name;
+  document.getElementById('sidebar-role').textContent   = currentUser.role + (currentUser.is_admin ? ' (Admin)' : '');
+  // Show admin nav if admin
+  if (currentUser.is_admin) document.getElementById('admin-nav').style.display = '';
+}
+async function doLogin() {
+  const btn      = document.getElementById('login-btn');
+  const errEl    = document.getElementById('login-error');
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value;
+
+  errEl.style.display = 'none';
+  if (!username || !password) { errEl.textContent = 'Please enter username and password.'; errEl.style.display = 'block'; return; }
+
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      currentUser = data.data;
+      showApp();
+      loadDashboard();
+    } else {
+      errEl.textContent = data.message || 'Login failed';
+      errEl.style.display = 'block';
+    }
+  } catch (e) {
+    errEl.textContent = 'Connection error. Is the server running?';
+    errEl.style.display = 'block';
+  }
+  btn.disabled = false; btn.textContent = 'Sign In';
+}
+async function doLogout() {
+  await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+  currentUser = null;
+  dashData    = null;
+  showLogin();
+}
+// Press Enter in login form
+document.addEventListener('DOMContentLoaded', () => {
+  ['login-username','login-password'].forEach(id => {
+    document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+  });
+});
+async function initApp() {
+  try {
+    const res = await fetch('/api/auth/me', { credentials: 'same-origin' });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success) { currentUser = data.data; showApp(); loadDashboard(); return; }
+    }
+  } catch (_) {}
+  showLogin();
+}
 
 // ========== VIEW SWITCHING ==========
 function showView(name) {
@@ -805,20 +994,86 @@ function showView(name) {
   const items = document.querySelectorAll('.nav-item');
   if (items[navMap[name]]) items[navMap[name]].classList.add('active');
 
-  const titles = { dashboard: 'Dashboard', leads: 'Leads', pipeline: 'Pipeline', activities: 'Activities', analytics: 'Analytics', followups: 'Follow-ups' };
+  const titles = { dashboard: 'Dashboard', leads: 'Leads', pipeline: 'Pipeline', activities: 'Activities', analytics: 'Analytics', followups: 'Follow-ups', users: 'User Management' };
   document.getElementById('page-title').textContent = titles[name] || name;
 
-  if (name === 'leads') { loadLeads(); populateAssigneeFilter(); }
-  if (name === 'pipeline') loadPipeline();
+  if (name === 'leads')     { loadLeads(); populateAssigneeFilter(); }
+  if (name === 'pipeline')  loadPipeline();
   if (name === 'activities') loadActivities();
   if (name === 'analytics') loadAnalytics();
   if (name === 'followups') loadFollowups();
+  if (name === 'users')     loadUsers();
 }
 
 // ========== API HELPERS ==========
 async function api(path, opts = {}) {
-  const res = await fetch('/api' + path, { headers: { 'Content-Type': 'application/json' }, ...opts });
+  const res = await fetch('/api' + path, {
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    ...opts,
+  });
+  if (res.status === 401) { showLogin(); return { success: false, message: 'Not authenticated' }; }
   return res.json();
+}
+
+// ========== USER MANAGEMENT (Admin) ==========
+async function loadUsers() {
+  const res = await api('/users');
+  if (!res.success) return;
+  const users = res.data;
+  const tbody = document.getElementById('users-tbody');
+  if (!users.length) {
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty"><div class="empty-icon">🔑</div><p>No users yet</p></div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = users.map(u => `
+    <tr>
+      <td style="font-weight:500">${u.name}</td>
+      <td style="font-family:'DM Mono',monospace;font-size:0.8rem">${u.username || '<span style="color:var(--text3);font-style:italic">no login</span>'}</td>
+      <td style="color:var(--text2)">${u.email || '—'}</td>
+      <td>${u.role || '—'}</td>
+      <td><span class="badge ${u.active ? 'badge-green' : 'badge-red'}">${u.active ? 'Active' : 'Inactive'}</span>${u.is_admin ? ' <span class="badge badge-purple">Admin</span>' : ''}</td>
+      <td>${u.is_admin ? '' : `<button class="btn-icon" style="color:var(--danger)" onclick="deleteUser('${u.id}','${u.name}')">🗑️</button>`}</td>
+    </tr>`).join('');
+}
+function openUserModal() {
+  document.getElementById('um-name').value     = '';
+  document.getElementById('um-username').value = '';
+  document.getElementById('um-password').value = '';
+  document.getElementById('um-email').value    = '';
+  document.getElementById('um-role').value     = 'Sales';
+  document.getElementById('um-error').style.display = 'none';
+  openMod('user-modal');
+}
+async function saveUser() {
+  const errEl = document.getElementById('um-error');
+  errEl.style.display = 'none';
+  const payload = {
+    name:     document.getElementById('um-name').value.trim(),
+    username: document.getElementById('um-username').value.trim(),
+    password: document.getElementById('um-password').value,
+    email:    document.getElementById('um-email').value.trim(),
+    role:     document.getElementById('um-role').value,
+  };
+  if (!payload.name || !payload.username || !payload.password) {
+    errEl.textContent = 'Name, username and password are required.';
+    errEl.style.display = 'block'; return;
+  }
+  const res = await api('/users', { method: 'POST', body: JSON.stringify(payload) });
+  if (res.success) {
+    closeMod('user-modal');
+    showToast('User created! Share credentials manually.');
+    loadUsers();
+  } else {
+    errEl.textContent = res.message || 'Failed to create user';
+    errEl.style.display = 'block';
+  }
+}
+async function deleteUser(id, name) {
+  if (!confirm(`Deactivate user "${name}"? They won't be able to log in.`)) return;
+  const res = await api(`/users/${id}`, { method: 'DELETE' });
+  if (res.success) { showToast('User deactivated'); loadUsers(); }
+  else showToast(res.message || 'Error', 'error');
 }
 
 // ========== HELPERS ==========
@@ -1493,7 +1748,7 @@ document.querySelectorAll('.modal-overlay').forEach(m => {
 
 // ========== INIT ==========
 document.addEventListener('DOMContentLoaded', () => {
-  loadDashboard();
+  initApp();
 });
 </script>
 </body>

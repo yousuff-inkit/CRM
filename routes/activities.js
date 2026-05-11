@@ -9,27 +9,44 @@ const VALID_STATUSES = ['Pending', 'Completed', 'Cancelled'];
 
 // ── GET activities ────────────────────────────────────────────────────────────
 router.get('/', function(req, res) {
-  var q   = req.query;
-  var sql = `SELECT a.*, l.name as lead_name, l.company as lead_company
-             FROM activities a LEFT JOIN leads l ON a.lead_id = l.id WHERE 1=1`;
-  var p   = [];
+  var user = req.session.user;
+  var q    = req.query;
+
+  var sql, p;
+  if (user.is_admin) {
+    sql = `SELECT a.*, l.name as lead_name, l.company as lead_company
+           FROM activities a LEFT JOIN leads l ON a.lead_id = l.id WHERE 1=1`;
+    p   = [];
+  } else {
+    sql = `SELECT a.*, l.name as lead_name, l.company as lead_company
+           FROM activities a INNER JOIN leads l ON a.lead_id = l.id
+           WHERE l.created_by = ?`;
+    p   = [user.id];
+  }
+
   if (q.lead_id) { sql += ' AND a.lead_id = ?'; p.push(q.lead_id); }
   if (q.status)  { sql += ' AND a.status = ?';  p.push(q.status); }
   if (q.type)    { sql += ' AND a.type = ?';    p.push(q.type); }
   if (q.overdue === 'true') sql += " AND a.status = 'Pending' AND a.scheduled_at < datetime('now')";
   sql += ' ORDER BY a.scheduled_at DESC';
+
   res.json({ success: true, data: queryAll(sql, p) });
 });
 
 // ── POST create activity ──────────────────────────────────────────────────────
 router.post('/', function(req, res) {
-  var b = req.body;
+  var b    = req.body;
+  var user = req.session.user;
+
   if (!b.lead_id || !b.type || !b.subject)
     return res.status(400).json({ success: false, message: 'lead_id, type and subject are required' });
 
-  var lead = queryOne('SELECT id FROM leads WHERE id = ?', [b.lead_id]);
+  var lead = queryOne('SELECT id, created_by FROM leads WHERE id = ?', [b.lead_id]);
   if (!lead)
     return res.status(404).json({ success: false, message: 'Lead not found' });
+
+  if (!user.is_admin && lead.created_by !== user.id)
+    return res.status(403).json({ success: false, message: 'Access denied' });
 
   var id     = uuid();
   var status = VALID_STATUSES.includes(b.status) ? b.status : 'Pending';
@@ -41,9 +58,9 @@ router.post('/', function(req, res) {
       [id, b.lead_id,
        VALID_TYPES.includes(b.type) ? b.type : b.type,
        String(b.subject).trim(),
-       b.notes       || null, b.outcome     || null,
+       b.notes        || null, b.outcome      || null,
        b.scheduled_at || null, b.completed_at || null,
-       status, b.created_by || null]
+       status, b.created_by || user.name || null]
     );
     if (status === 'Completed') {
       run("UPDATE leads SET last_contacted=datetime('now'), updated_at=datetime('now') WHERE id=?", [b.lead_id]);
@@ -58,8 +75,14 @@ router.post('/', function(req, res) {
 // ── PUT update activity ───────────────────────────────────────────────────────
 router.put('/:id', function(req, res) {
   var b        = req.body;
+  var user     = req.session.user;
   var existing = queryOne('SELECT * FROM activities WHERE id=?', [req.params.id]);
   if (!existing) return res.status(404).json({ success: false, message: 'Activity not found' });
+
+  // Check the parent lead's ownership
+  var lead = queryOne('SELECT created_by FROM leads WHERE id = ?', [existing.lead_id]);
+  if (!user.is_admin && lead && lead.created_by !== user.id)
+    return res.status(403).json({ success: false, message: 'Access denied' });
 
   var newStatus = VALID_STATUSES.includes(b.status) ? b.status : existing.status;
 
@@ -89,8 +112,13 @@ router.put('/:id', function(req, res) {
 
 // ── DELETE activity ───────────────────────────────────────────────────────────
 router.delete('/:id', function(req, res) {
-  var existing = queryOne('SELECT id FROM activities WHERE id=?', [req.params.id]);
+  var user     = req.session.user;
+  var existing = queryOne('SELECT * FROM activities WHERE id=?', [req.params.id]);
   if (!existing) return res.status(404).json({ success: false, message: 'Activity not found' });
+
+  var lead = queryOne('SELECT created_by FROM leads WHERE id = ?', [existing.lead_id]);
+  if (!user.is_admin && lead && lead.created_by !== user.id)
+    return res.status(403).json({ success: false, message: 'Access denied' });
 
   try {
     run('DELETE FROM activities WHERE id=?', [req.params.id]);

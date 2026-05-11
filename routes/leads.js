@@ -8,27 +8,31 @@ const VALID_STAGES   = ['Lead', 'Qualification', 'Opportunity', 'Proposal', 'Neg
 const VALID_STATUSES = ['New', 'In Progress', 'Qualified', 'Nurturing', 'Disqualified'];
 const VALID_TYPES    = ['Inbound', 'Outbound'];
 
-// Coerce proposal_sent from any truthy/string representation
 function toFlag(val) {
   return (val === true || val === 1 || val === '1' || val === 'true') ? 1 : 0;
 }
-
-// Safe numeric: return 0 for NaN/negative; preserve valid zero
 function toDealValue(val) {
   const n = parseFloat(val);
   return (isNaN(n) || n < 0) ? 0 : n;
 }
-
-// For optional text fields in PUT: allow explicit clear with "" or null
 function optStr(incoming, fallback) {
   return incoming !== undefined ? (incoming || null) : fallback;
 }
 
+// Returns { filter: ' AND ...', params: [...] } scoping query to the current user
+function ownerFilter(user) {
+  if (user.is_admin) return { filter: '', params: [] };
+  return { filter: ' AND created_by = ?', params: [user.id] };
+}
+
 // ── GET all leads ─────────────────────────────────────────────────────────────
 router.get('/', function(req, res) {
-  var q   = req.query;
-  var sql = 'SELECT * FROM leads WHERE 1=1';
-  var p   = [];
+  var user = req.session.user;
+  var q    = req.query;
+  var own  = ownerFilter(user);
+  var sql  = 'SELECT * FROM leads WHERE 1=1' + own.filter;
+  var p    = own.params.slice();
+
   if (q.status)      { sql += ' AND status = ?';      p.push(q.status); }
   if (q.stage)       { sql += ' AND lead_stage = ?';  p.push(q.stage); }
   if (q.region)      { sql += ' AND region = ?';      p.push(q.region); }
@@ -43,14 +47,20 @@ router.get('/', function(req, res) {
   var sort  = validSorts.includes(q.sort) ? q.sort : 'created_at';
   var order = q.order === 'asc' ? 'ASC' : 'DESC';
   sql += ' ORDER BY ' + sort + ' ' + order;
+
   var leads = queryAll(sql, p);
   res.json({ success: true, data: leads, count: leads.length });
 });
 
 // ── GET single lead + related data ────────────────────────────────────────────
 router.get('/:id', function(req, res) {
+  var user = req.session.user;
   var lead = queryOne('SELECT * FROM leads WHERE id = ?', [req.params.id]);
   if (!lead) return res.status(404).json({ success: false, message: 'Lead not found' });
+
+  if (!user.is_admin && lead.created_by !== user.id)
+    return res.status(403).json({ success: false, message: 'Access denied' });
+
   lead.activities = queryAll('SELECT * FROM activities WHERE lead_id = ? ORDER BY scheduled_at DESC', [req.params.id]);
   lead.contacts   = queryAll('SELECT * FROM contacts   WHERE lead_id = ? ORDER BY is_decision_maker DESC', [req.params.id]);
   lead.history    = queryAll('SELECT * FROM pipeline_history WHERE lead_id = ? ORDER BY changed_at DESC', [req.params.id]);
@@ -59,7 +69,9 @@ router.get('/:id', function(req, res) {
 
 // ── POST create lead ──────────────────────────────────────────────────────────
 router.post('/', function(req, res) {
-  var b = req.body;
+  var b    = req.body;
+  var user = req.session.user;
+
   if (!b.name || !String(b.name).trim())
     return res.status(400).json({ success: false, message: 'name is required' });
 
@@ -73,8 +85,8 @@ router.post('/', function(req, res) {
          (id,date,name,email,phone,company,job_title,city,country,region,
           solution_interest,employee_size,company_revenue,lead_source,assigned_to,
           status,lead_type,lead_stage,next_followup,contact_method,
-          expected_deal_value,proposal_sent,notes,created_at,updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`,
+          expected_deal_value,proposal_sent,notes,created_by,created_at,updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`,
       [id, b.date || today, String(b.name).trim(),
        b.email   || null, b.phone   || null,
        b.company || null, b.job_title || null,
@@ -89,11 +101,12 @@ router.post('/', function(req, res) {
        b.next_followup  || null, b.contact_method || null,
        toDealValue(b.expected_deal_value),
        toFlag(b.proposal_sent),
-       b.notes || null]
+       b.notes || null,
+       user.id]
     );
     run(
       'INSERT INTO pipeline_history (id,lead_id,from_stage,to_stage,changed_by,notes) VALUES (?,?,?,?,?,?)',
-      [uuid(), id, null, stage, b.assigned_to || 'System', 'Lead created']
+      [uuid(), id, null, stage, user.name || 'System', 'Lead created']
     );
   } catch (e) {
     return res.status(500).json({ success: false, message: 'Failed to create lead' });
@@ -105,8 +118,12 @@ router.post('/', function(req, res) {
 // ── PUT update lead ───────────────────────────────────────────────────────────
 router.put('/:id', function(req, res) {
   var b        = req.body;
+  var user     = req.session.user;
   var existing = queryOne('SELECT * FROM leads WHERE id = ?', [req.params.id]);
   if (!existing) return res.status(404).json({ success: false, message: 'Lead not found' });
+
+  if (!user.is_admin && existing.created_by !== user.id)
+    return res.status(403).json({ success: false, message: 'Access denied' });
 
   if (!b.name && b.name !== undefined)
     return res.status(400).json({ success: false, message: 'name cannot be empty' });
@@ -119,7 +136,7 @@ router.put('/:id', function(req, res) {
     if (b.lead_stage && b.lead_stage !== existing.lead_stage) {
       run(
         'INSERT INTO pipeline_history (id,lead_id,from_stage,to_stage,changed_by) VALUES (?,?,?,?,?)',
-        [uuid(), req.params.id, existing.lead_stage, newStage, b.assigned_to || existing.assigned_to || 'User']
+        [uuid(), req.params.id, existing.lead_stage, newStage, user.name || 'User']
       );
     }
 
@@ -168,6 +185,7 @@ router.put('/:id', function(req, res) {
 
 // ── PATCH stage only ──────────────────────────────────────────────────────────
 router.patch('/:id/stage', function(req, res) {
+  var user     = req.session.user;
   var newStage = req.body.lead_stage;
   if (!newStage)
     return res.status(400).json({ success: false, message: 'lead_stage is required' });
@@ -177,10 +195,13 @@ router.patch('/:id/stage', function(req, res) {
   var existing = queryOne('SELECT * FROM leads WHERE id = ?', [req.params.id]);
   if (!existing) return res.status(404).json({ success: false, message: 'Lead not found' });
 
+  if (!user.is_admin && existing.created_by !== user.id)
+    return res.status(403).json({ success: false, message: 'Access denied' });
+
   try {
     run(
       'INSERT INTO pipeline_history (id,lead_id,from_stage,to_stage,changed_by) VALUES (?,?,?,?,?)',
-      [uuid(), req.params.id, existing.lead_stage, newStage, req.body.changed_by || 'User']
+      [uuid(), req.params.id, existing.lead_stage, newStage, user.name || 'User']
     );
     run(
       "UPDATE leads SET lead_stage=?, updated_at=datetime('now') WHERE id=?",
@@ -195,8 +216,12 @@ router.patch('/:id/stage', function(req, res) {
 
 // ── DELETE lead (atomic cascade) ──────────────────────────────────────────────
 router.delete('/:id', function(req, res) {
+  var user     = req.session.user;
   var existing = queryOne('SELECT * FROM leads WHERE id = ?', [req.params.id]);
   if (!existing) return res.status(404).json({ success: false, message: 'Lead not found' });
+
+  if (!user.is_admin && existing.created_by !== user.id)
+    return res.status(403).json({ success: false, message: 'Access denied' });
 
   try {
     runTransaction([

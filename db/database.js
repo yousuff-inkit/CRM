@@ -1,6 +1,7 @@
 'use strict';
 const path = require('path');
 const fs   = require('fs');
+const { v4: uuid } = require('uuid');
 
 const DB_PATH = path.join(__dirname, '..', 'crm.db');
 let db;
@@ -20,7 +21,8 @@ async function initDB() {
   }
 
   createTables();
-  seedData();
+  migrateDB();
+  await seedData();
   return db;
 }
 
@@ -49,6 +51,7 @@ function createTables() {
     expected_deal_value REAL DEFAULT 0,
     proposal_sent INTEGER DEFAULT 0,
     closed_date TEXT, notes TEXT,
+    created_by TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   )`);
@@ -83,6 +86,9 @@ function createTables() {
     name TEXT NOT NULL,
     email TEXT UNIQUE NOT NULL,
     role TEXT DEFAULT 'Sales',
+    username TEXT UNIQUE,
+    password_hash TEXT,
+    is_admin INTEGER DEFAULT 0,
     active INTEGER DEFAULT 1,
     created_at TEXT DEFAULT (datetime('now'))
   )`);
@@ -100,19 +106,50 @@ function createTables() {
   persist();
 }
 
-function seedData() {
-  const existing = queryOne('SELECT COUNT(*) as c FROM users');
-  if (existing && existing.c > 0) return;
+// Add new columns to existing tables without breaking existing data.
+// SQLite ALTER TABLE ADD COLUMN does not support UNIQUE — uniqueness is
+// enforced at the application level for rows added to pre-existing tables.
+function migrateDB() {
+  var migrations = [
+    'ALTER TABLE users ADD COLUMN username TEXT',
+    'ALTER TABLE users ADD COLUMN password_hash TEXT',
+    'ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0',
+    'ALTER TABLE leads ADD COLUMN created_by TEXT',
+  ];
+  migrations.forEach(function(sql) {
+    try { db.run(sql); } catch (_) {}
+  });
+  persist();
+}
 
-  const users = [
+async function seedData() {
+  const bcrypt = require('bcrypt');
+
+  // Always ensure an admin user exists
+  var adminExists = queryOne("SELECT id FROM users WHERE username='admin'");
+  if (!adminExists) {
+    var adminHash = await bcrypt.hash('admin123', 10);
+    run(
+      'INSERT OR IGNORE INTO users (id,name,email,role,username,password_hash,is_admin,active) VALUES (?,?,?,?,?,?,?,?)',
+      [uuid(), 'Administrator', 'admin@inkit.com', 'Admin', 'admin', adminHash, 1, 1]
+    );
+  }
+
+  // Seed demo leads only if the leads table is empty
+  var hasLeads = queryOne('SELECT COUNT(*) as c FROM leads');
+  if (hasLeads && hasLeads.c > 0) return;
+
+  var users = [
     ['u1', 'Rahul Sharma',    'rahul@company.com',  'Sales Manager'],
     ['u2', 'Priya Patel',     'priya@company.com',  'Inside Sales'],
     ['u3', 'Aditya Verma',    'aditya@company.com', 'Field Sales'],
     ['u4', 'Sneha Kulkarni',  'sneha@company.com',  'Marketing'],
   ];
-  users.forEach(u => run('INSERT OR IGNORE INTO users (id,name,email,role) VALUES (?,?,?,?)', u));
+  users.forEach(function(u) {
+    run('INSERT OR IGNORE INTO users (id,name,email,role) VALUES (?,?,?,?)', u);
+  });
 
-  const leads = [
+  var leads = [
     ['l1','2025-01-10','Ravi Kumar','ravi@techcorp.in','9876543210','TechCorp India','CTO','Mumbai','India','India','SAP SuccessFactors','500-1000','50Cr+','LinkedIn','Rahul Sharma','Qualified','Inbound','Opportunity','2025-03-20','2025-04-01','Email',2500000,1,null,'Strong interest in SF HCM module'],
     ['l2','2025-01-18','Anita Singh','anita@globalmanuf.ae','971501234567','Global Manufacturing LLC','CHRO','Dubai','UAE','UAE','SAP S/4HANA Cloud','1000-5000','200Cr+','Referral','Priya Patel','In Progress','Outbound','Qualification','2025-03-22','2025-04-05','Call',5000000,0,null,'Referred by existing client'],
     ['l3','2025-02-02','Mohammed Al-Rashid','m.rashid@sauco.sa','966512345678','Saudi Aramco Consulting','CFO','Riyadh','KSA','KSA','SAP Analytics Cloud','5000+','500Cr+','Event','Aditya Verma','New','Inbound','Lead','2025-03-15','2025-04-10','Meeting',8000000,0,null,'Met at SAP TechEd Riyadh'],
@@ -122,7 +159,7 @@ function seedData() {
     ['l7','2025-01-25','Omar Al-Zahrani','omar@conglomerate.sa','966598765432','KSA Conglomerate Group','Group CTO','Jeddah','KSA','KSA','SAP SuccessFactors','5000+','300Cr+','Partner Referral','Aditya Verma','Qualified','Inbound','Opportunity','2025-03-28','2025-04-03','Meeting',6000000,1,null,'SAP partner referral - high priority'],
     ['l8','2025-03-12','Meera Iyer','meera@logisticsco.in','8877665544','LogisticsCo India','VP Operations','Chennai','India','India','SAP S/4HANA Cloud','200-500','30Cr+','LinkedIn','Sneha Kulkarni','Disqualified','Inbound','Lead','2025-03-20',null,'Call',0,0,'2025-03-25','Budget not allocated this year'],
   ];
-  leads.forEach(l => {
+  leads.forEach(function(l) {
     run(`INSERT OR IGNORE INTO leads
       (id,date,name,email,phone,company,job_title,city,country,region,
        solution_interest,employee_size,company_revenue,lead_source,assigned_to,
@@ -131,7 +168,7 @@ function seedData() {
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, l);
   });
 
-  const activities = [
+  var activities = [
     ['a1','l1','Call','Discovery Call','Discussed SF HCM requirements in detail','Positive - demo requested','2025-03-20','2025-03-20','Completed','Rahul Sharma'],
     ['a2','l1','Meeting','Product Demo','Live demo of SuccessFactors modules','Excellent - proposal requested','2025-03-28','2025-03-28','Completed','Rahul Sharma'],
     ['a3','l1','Email','Proposal Sent','Detailed proposal with pricing sent','Awaiting response','2025-04-01',null,'Pending','Rahul Sharma'],
@@ -141,7 +178,7 @@ function seedData() {
     ['a7','l3','Email','Introduction Email','Sent company profile and SAP credentials','No response yet','2025-03-15',null,'Pending','Aditya Verma'],
     ['a8','l4','WhatsApp','BTP Follow-up','Sent BTP case studies and ROI analysis','Opened, no reply','2025-03-18',null,'Pending','Sneha Kulkarni'],
   ];
-  activities.forEach(a => {
+  activities.forEach(function(a) {
     run(`INSERT OR IGNORE INTO activities
       (id,lead_id,type,subject,notes,outcome,scheduled_at,completed_at,status,created_by)
       VALUES (?,?,?,?,?,?,?,?,?,?)`, a);
