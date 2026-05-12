@@ -123,7 +123,7 @@ function migrateDB() {
 }
 
 async function seedData() {
-  const bcrypt = require('bcrypt');
+  const bcrypt = require('bcryptjs');
 
   // Always ensure an admin user exists
   var adminExists = queryOne("SELECT id FROM users WHERE username='admin'");
