@@ -2,7 +2,7 @@
 const express = require('express');
 const router  = express.Router();
 const { v4: uuid } = require('uuid');
-const { run, runTransaction, queryAll, queryOne } = require('../db/database');
+const { run, runTransaction, queryAll, queryOne, getSubordinateIds } = require('../db/database');
 
 const VALID_STAGES   = ['Lead', 'Qualification', 'Opportunity', 'Proposal', 'Negotiation', 'Closed Won', 'Closed Lost'];
 const VALID_STATUSES = ['New', 'In Progress', 'Qualified', 'Nurturing', 'Disqualified'];
@@ -32,9 +32,16 @@ function optStr(incoming, fallback) {
   return incoming !== undefined ? (incoming || null) : fallback;
 }
 
-// Returns { filter: ' AND ...', params: [...] } scoping query to the current user
+// Returns { filter: ' AND ...', params: [...] } scoping query to the current user.
+// Managers/supervisors (hierarchy_level < 4) see their own leads + all subordinates'.
 function ownerFilter(user) {
   if (user.is_admin) return { filter: '', params: [] };
+  var level = user.hierarchy_level || 4;
+  if (level < 4) {
+    var ids = getSubordinateIds(user.id);
+    var placeholders = ids.map(function() { return '?'; }).join(',');
+    return { filter: ' AND created_by IN (' + placeholders + ')', params: ids };
+  }
   return { filter: ' AND created_by = ?', params: [user.id] };
 }
 

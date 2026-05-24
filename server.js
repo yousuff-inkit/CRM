@@ -63,6 +63,11 @@ app.use('/api/contacts',   requireAuth, require('./routes/contacts'));
 app.use('/api/analytics',  requireAuth, require('./routes/analytics'));
 app.use('/api/users',      require('./routes/users')); // requireAdmin is inside
 
+// ── API 404 — must come before SPA fallback ───────────────────────────────────
+app.use('/api', function(req, res) {
+  res.status(404).json({ success: false, message: 'API route not found: ' + req.method + ' ' + req.originalUrl });
+});
+
 // ── SPA fallback ──────────────────────────────────────────────────────────────
 app.use(function(req, res) {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));

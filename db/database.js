@@ -93,7 +93,10 @@ function createTables() {
     password_hash TEXT,
     is_admin INTEGER DEFAULT 0,
     active INTEGER DEFAULT 1,
-    created_at TEXT DEFAULT (datetime('now'))
+    manager_id TEXT,
+    hierarchy_level INTEGER DEFAULT 4,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (manager_id) REFERENCES users(id)
   )`);
 
   db.run(`CREATE TABLE IF NOT EXISTS pipeline_history (
@@ -121,9 +124,25 @@ function migrateDB() {
     'ALTER TABLE leads ADD COLUMN budget_confirmed INTEGER DEFAULT 0',
     'ALTER TABLE leads ADD COLUMN need_identified INTEGER DEFAULT 0',
     'ALTER TABLE leads ADD COLUMN implementation_timeline TEXT',
+    'ALTER TABLE users ADD COLUMN manager_id TEXT',
+    'ALTER TABLE users ADD COLUMN hierarchy_level INTEGER DEFAULT 4',
   ];
   migrations.forEach(function(sql) {
     try { db.run(sql); } catch (_) {}
+  });
+
+  // Populate hierarchy_level for existing users based on their role/is_admin flag
+  var ROLE_LEVELS = {
+    'Admin': 1,
+    'Manager': 2, 'Sales Manager': 2, 'Regional Manager': 2,
+    'Supervisor': 3, 'Team Lead': 3,
+    'Sales': 4, 'Inside Sales': 4, 'Field Sales': 4, 'Marketing': 4, 'Employee': 4,
+  };
+  try { db.run('UPDATE users SET hierarchy_level=1 WHERE is_admin=1'); } catch (_) {}
+  var nonAdminUsers = queryAll('SELECT id, role FROM users WHERE is_admin=0 AND (hierarchy_level IS NULL OR hierarchy_level=4)');
+  nonAdminUsers.forEach(function(u) {
+    var level = ROLE_LEVELS[u.role] || 4;
+    try { db.run('UPDATE users SET hierarchy_level=? WHERE id=?', [level, u.id]); } catch (_) {}
   });
   persist();
 }
@@ -240,4 +259,21 @@ function queryOne(sql, params) {
   return rows[0] || null;
 }
 
-module.exports = { initDB, run, runTransaction, queryAll, queryOne };
+// BFS walk down the reporting tree; always includes the starting user's own ID.
+function getSubordinateIds(userId) {
+  var result = [userId];
+  var queue  = [userId];
+  while (queue.length > 0) {
+    var current = queue.shift();
+    var subs = queryAll('SELECT id FROM users WHERE manager_id = ? AND active = 1', [current]);
+    subs.forEach(function(s) {
+      if (result.indexOf(s.id) === -1) {
+        result.push(s.id);
+        queue.push(s.id);
+      }
+    });
+  }
+  return result;
+}
+
+module.exports = { initDB, run, runTransaction, queryAll, queryOne, getSubordinateIds };

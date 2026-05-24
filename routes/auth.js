@@ -20,12 +20,14 @@ router.post('/login', async function(req, res) {
     return res.status(401).json({ success: false, message: 'Invalid username or password' });
 
   req.session.user = {
-    id:       user.id,
-    name:     user.name,
-    email:    user.email,
-    role:     user.role,
-    username: user.username,
-    is_admin: user.is_admin ? 1 : 0,
+    id:              user.id,
+    name:            user.name,
+    email:           user.email,
+    role:            user.role,
+    username:        user.username,
+    is_admin:        user.is_admin ? 1 : 0,
+    hierarchy_level: user.hierarchy_level || (user.is_admin ? 1 : 4),
+    manager_id:      user.manager_id || null,
   };
   res.json({ success: true, data: req.session.user });
 });

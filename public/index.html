@@ -274,6 +274,14 @@ td.date-overdue { color: var(--danger); font-weight: 600; }
 .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 10px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* HIERARCHY BADGES */
+.hier-badge { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 999px; font-size: 0.67rem; font-weight: 700; white-space: nowrap; }
+.hier-l1 { background: var(--purple-light); color: var(--purple); }
+.hier-l2 { background: var(--accent-light);  color: var(--accent); }
+.hier-l3 { background: var(--warn-light);    color: var(--warn); }
+.hier-l4 { background: #f1f5f9;              color: #64748b; }
+.mgr-preview { background: var(--accent-light); border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px 12px; margin-top: 6px; font-size: 0.78rem; }
+
 /* QUALIFICATION CHECKLIST */
 .qual-score-ring { width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.82rem; font-weight: 700; color: #fff; font-family: 'DM Mono', monospace; flex-shrink: 0; }
 .qual-bar { height: 6px; background: var(--border); border-radius: 999px; overflow: hidden; margin-bottom: 14px; }
@@ -647,7 +655,7 @@ td.date-overdue { color: var(--danger); font-weight: 600; }
         <div class="table-wrap">
           <table class="data-table" id="users-table">
             <thead>
-              <tr><th>Name</th><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr>
+              <tr><th>Name</th><th>Username</th><th>Email</th><th>Level / Role</th><th>Reports To</th><th>Status</th><th></th></tr>
             </thead>
             <tbody id="users-tbody"></tbody>
           </table>
@@ -880,25 +888,26 @@ td.date-overdue { color: var(--danger); font-weight: 600; }
   </div>
 </div>
 
-<!-- ======== USER MODAL (Admin: Create User) ======== -->
+<!-- ======== USER MODAL (Admin: Create / Edit User) ======== -->
 <div class="modal-overlay" id="user-modal">
-  <div class="modal" style="max-width:440px;">
+  <div class="modal" style="max-width:480px;">
     <div class="modal-header">
-      <div class="modal-title">Create User</div>
+      <div class="modal-title" id="um-modal-title">Create User</div>
       <button class="modal-close" onclick="closeMod('user-modal')">✕</button>
     </div>
     <div class="modal-body">
+      <input type="hidden" id="um-id">
       <div class="form-grid">
         <div class="form-group full">
           <label class="form-label">Full Name <span class="req">*</span></label>
           <input type="text" class="form-control" id="um-name" placeholder="Jane Smith">
         </div>
         <div class="form-group">
-          <label class="form-label">Username <span class="req">*</span></label>
+          <label class="form-label">Username <span class="req" id="um-username-req">*</span></label>
           <input type="text" class="form-control" id="um-username" placeholder="janesmith" autocomplete="off">
         </div>
         <div class="form-group">
-          <label class="form-label">Password <span class="req">*</span></label>
+          <label class="form-label" id="um-pw-label">Password <span class="req">*</span></label>
           <input type="password" class="form-control" id="um-password" placeholder="••••••••" autocomplete="new-password">
         </div>
         <div class="form-group">
@@ -907,20 +916,44 @@ td.date-overdue { color: var(--danger); font-weight: 600; }
         </div>
         <div class="form-group">
           <label class="form-label">Role</label>
-          <select class="form-control" id="um-role">
-            <option>Sales</option>
-            <option>Sales Manager</option>
-            <option>Inside Sales</option>
-            <option>Field Sales</option>
-            <option>Marketing</option>
+          <select class="form-control" id="um-role" onchange="onRoleChange()">
+            <optgroup label="━━ Level 2 — Manager ━━">
+              <option value="Manager">Manager</option>
+              <option value="Sales Manager">Sales Manager</option>
+              <option value="Regional Manager">Regional Manager</option>
+            </optgroup>
+            <optgroup label="━━ Level 3 — Supervisor ━━">
+              <option value="Supervisor">Supervisor</option>
+              <option value="Team Lead">Team Lead</option>
+            </optgroup>
+            <optgroup label="━━ Level 4 — Employee ━━">
+              <option value="Sales" selected>Sales</option>
+              <option value="Inside Sales">Inside Sales</option>
+              <option value="Field Sales">Field Sales</option>
+              <option value="Marketing">Marketing</option>
+            </optgroup>
           </select>
+        </div>
+        <!-- Live level indicator updates when role changes -->
+        <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:2px;">
+          <div>
+            <div class="form-label" style="margin-bottom:5px;">Hierarchy Level</div>
+            <div id="um-level-indicator" style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;min-height:36px;"></div>
+          </div>
+        </div>
+        <div class="form-group full">
+          <label class="form-label" id="um-mgr-label">Reports To <span class="req">*</span></label>
+          <select class="form-control" id="um-manager-id" onchange="onManagerChange()">
+            <option value="">— Select manager —</option>
+          </select>
+          <div id="um-manager-preview" style="display:none;"></div>
         </div>
       </div>
       <div id="um-error" style="color:var(--danger);font-size:0.78rem;margin-top:10px;display:none;"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeMod('user-modal')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveUser()">Create User</button>
+      <button class="btn btn-primary" id="um-save-btn" onclick="saveUser()">Create User</button>
     </div>
   </div>
 </div>
@@ -1035,6 +1068,11 @@ async function api(path, opts = {}) {
     ...opts,
   });
   if (res.status === 401) { showLogin(); return { success: false, message: 'Not authenticated' }; }
+  const ct = res.headers.get('content-type') || '';
+  if (!ct.includes('application/json')) {
+    console.error('Non-JSON response for', (opts.method || 'GET'), '/api' + path, '— status', res.status);
+    return { success: false, message: 'Server error (status ' + res.status + ')' };
+  }
   return res.json();
 }
 
@@ -1045,52 +1083,178 @@ async function loadUsers() {
   const users = res.data;
   const tbody = document.getElementById('users-tbody');
   if (!users.length) {
-    tbody.innerHTML = '<tr><td colspan="6"><div class="empty"><div class="empty-icon">🔑</div><p>No users yet</p></div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7"><div class="empty"><div class="empty-icon">🔑</div><p>No users yet</p></div></td></tr>';
     return;
   }
   tbody.innerHTML = users.map(u => `
     <tr>
-      <td style="font-weight:500">${u.name}</td>
-      <td style="font-family:'DM Mono',monospace;font-size:0.8rem">${u.username || '<span style="color:var(--text3);font-style:italic">no login</span>'}</td>
-      <td style="color:var(--text2)">${u.email || '—'}</td>
-      <td>${u.role || '—'}</td>
+      <td style="font-weight:600">${u.name}</td>
+      <td style="font-family:'DM Mono',monospace;font-size:0.8rem;color:var(--text2)">${u.username || '<span style="color:var(--text3);font-style:italic">no login</span>'}</td>
+      <td style="color:var(--text2);font-size:0.8rem">${u.email || '—'}</td>
+      <td>${hierBadge(u.is_admin ? 1 : (u.hierarchy_level || 4))} <span style="font-size:0.8rem">${u.role || '—'}</span></td>
+      <td>
+        ${u.manager_name
+          ? `<div style="font-size:0.8rem;font-weight:500">${u.manager_name}</div>
+             <div style="font-size:0.68rem;color:var(--text3)">${hierBadge(u.manager_level)} ${u.manager_role||''}</div>`
+          : `<span style="color:var(--text3);font-style:italic;font-size:0.8rem">${u.is_admin ? 'Top Level' : '— not set —'}</span>`}
+      </td>
       <td><span class="badge ${u.active ? 'badge-green' : 'badge-red'}">${u.active ? 'Active' : 'Inactive'}</span>${u.is_admin ? ' <span class="badge badge-purple">Admin</span>' : ''}</td>
-      <td>${u.is_admin ? '' : `<button class="btn-icon" style="color:var(--danger)" onclick="deleteUser('${u.id}','${u.name}')">🗑️</button>`}</td>
+      <td style="display:flex;gap:4px;">
+        ${u.is_admin ? '' : `
+          <button class="btn-icon" title="Edit user" onclick="openEditUserModal('${u.id}')">✏️</button>
+          <button class="btn-icon" style="color:var(--danger)" title="Deactivate" onclick="deleteUser('${u.id}','${u.name}')">🗑️</button>`}
+      </td>
     </tr>`).join('');
 }
-function openUserModal() {
+
+// Open modal for creating a new user
+async function openUserModal() {
+  const r = await api('/analytics/users');
+  allUsers = r.data || [];
+
+  document.getElementById('um-id').value       = '';
   document.getElementById('um-name').value     = '';
   document.getElementById('um-username').value = '';
+  document.getElementById('um-username').disabled = false;
   document.getElementById('um-password').value = '';
   document.getElementById('um-email').value    = '';
   document.getElementById('um-role').value     = 'Sales';
   document.getElementById('um-error').style.display = 'none';
+  document.getElementById('um-manager-preview').style.display = 'none';
+  document.getElementById('um-modal-title').textContent = 'Create User';
+  document.getElementById('um-save-btn').textContent    = 'Create User';
+  document.getElementById('um-pw-label').innerHTML      = 'Password <span class="req">*</span>';
   openMod('user-modal');
+  onRoleChange(); // init dropdown + level badge
 }
+
+// Open modal pre-filled for editing an existing user
+async function openEditUserModal(userId) {
+  const r = await api('/analytics/users');
+  allUsers = r.data || [];
+
+  const u = allUsers.find(x => x.id === userId);
+  if (!u) return;
+
+  document.getElementById('um-id').value       = u.id;
+  document.getElementById('um-name').value     = u.name;
+  document.getElementById('um-username').value = u.username || '';
+  document.getElementById('um-username').disabled = true; // username is immutable
+  document.getElementById('um-password').value = '';
+  document.getElementById('um-email').value    = u.email || '';
+  document.getElementById('um-role').value     = u.role || 'Sales';
+  document.getElementById('um-error').style.display = 'none';
+  document.getElementById('um-manager-preview').style.display = 'none';
+  document.getElementById('um-modal-title').textContent = 'Edit User — ' + u.name;
+  document.getElementById('um-save-btn').textContent    = 'Save Changes';
+  document.getElementById('um-pw-label').innerHTML      = 'New Password <span style="color:var(--text3);font-weight:400">(leave blank to keep current)</span>';
+  openMod('user-modal');
+  onRoleChange(u.manager_id); // init dropdown + pre-select existing manager
+}
+
+// Populates manager dropdown with users exactly one level above, optionally pre-selecting one
+function onRoleChange(preselectedManagerId) {
+  const role    = document.getElementById('um-role').value;
+  const level   = ROLE_LEVELS_FE[role] || 4;
+  const sel     = document.getElementById('um-manager-id');
+  const mgrLabel= document.getElementById('um-mgr-label');
+
+  // Update the live level indicator badge
+  const indicator = document.getElementById('um-level-indicator');
+  const LEVEL_NAMES = { 2: 'Manager', 3: 'Supervisor', 4: 'Employee' };
+  indicator.innerHTML = hierBadge(level) + `<span style="font-size:0.78rem;color:var(--text2)">This user will be Level ${level} — ${LEVEL_NAMES[level] || 'Employee'}</span>`;
+
+  // Strict: show ONLY users exactly one level above (Admin=L1 for managers, Manager=L2 for supervisors, etc.)
+  const requiredMgrLevel = level - 1;
+  const eligible = allUsers.filter(u => {
+    const ul = u.is_admin ? 1 : (u.hierarchy_level || 4);
+    return ul === requiredMgrLevel && u.active;
+  });
+
+  const levelNames = { 1: 'Admin', 2: 'Manager', 3: 'Supervisor' };
+  mgrLabel.innerHTML = `Reports To (Level ${requiredMgrLevel} — ${levelNames[requiredMgrLevel] || '?'}) <span class="req">*</span>`;
+
+  if (eligible.length === 0) {
+    sel.innerHTML = `<option value="">— No Level ${requiredMgrLevel} users exist yet —</option>`;
+  } else {
+    sel.innerHTML = '<option value="">— Select —</option>' +
+      eligible.map(u => `<option value="${u.id}">${u.name} (${u.role || 'Admin'})</option>`).join('');
+  }
+
+  // Pre-select existing manager if editing
+  if (preselectedManagerId) {
+    sel.value = preselectedManagerId;
+    onManagerChange();
+  } else {
+    document.getElementById('um-manager-preview').style.display = 'none';
+  }
+}
+
+function onManagerChange() {
+  const managerId = document.getElementById('um-manager-id').value;
+  const previewEl = document.getElementById('um-manager-preview');
+  if (!managerId) { previewEl.style.display = 'none'; return; }
+
+  const mgr = allUsers.find(u => u.id === managerId);
+  if (!mgr) { previewEl.style.display = 'none'; return; }
+
+  const mgrLevel  = mgr.is_admin ? 1 : (mgr.hierarchy_level || 4);
+  const mgrOfMgr  = mgr.manager_id ? allUsers.find(u => u.id === mgr.manager_id) : null;
+
+  previewEl.style.display = '';
+  previewEl.className     = 'mgr-preview';
+  previewEl.innerHTML     = `
+    <div style="font-size:0.67rem;font-weight:700;color:var(--accent);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.5px">Manager Info</div>
+    <div style="font-weight:600;font-size:0.85rem">${mgr.name}</div>
+    <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
+      ${hierBadge(mgrLevel)}
+      <span style="font-size:0.75rem;color:var(--text2)">${mgr.role || 'Admin'}</span>
+    </div>
+    ${mgrOfMgr ? `<div style="font-size:0.7rem;color:var(--text3);margin-top:4px">Their manager: ${mgrOfMgr.name}</div>` : '<div style="font-size:0.7rem;color:var(--text3);margin-top:4px">Reports to: Top Level</div>'}`;
+}
+
 async function saveUser() {
-  const errEl = document.getElementById('um-error');
+  const errEl  = document.getElementById('um-error');
   errEl.style.display = 'none';
-  const payload = {
-    name:     document.getElementById('um-name').value.trim(),
-    username: document.getElementById('um-username').value.trim(),
-    password: document.getElementById('um-password').value,
-    email:    document.getElementById('um-email').value.trim(),
-    role:     document.getElementById('um-role').value,
-  };
-  if (!payload.name || !payload.username || !payload.password) {
-    errEl.textContent = 'Name, username and password are required.';
+
+  const editId     = document.getElementById('um-id').value;
+  const isEdit     = !!editId;
+  const name       = document.getElementById('um-name').value.trim();
+  const username   = document.getElementById('um-username').value.trim();
+  const password   = document.getElementById('um-password').value;
+  const email      = document.getElementById('um-email').value.trim();
+  const role       = document.getElementById('um-role').value;
+  const manager_id = document.getElementById('um-manager-id').value || null;
+
+  if (!name) { errEl.textContent = 'Full name is required.'; errEl.style.display = 'block'; return; }
+  if (!isEdit && (!username || !password)) {
+    errEl.textContent = 'Username and password are required for new users.';
     errEl.style.display = 'block'; return;
   }
-  const res = await api('/users', { method: 'POST', body: JSON.stringify(payload) });
+  if (!manager_id) {
+    errEl.textContent = 'Please select a manager — every user must report to someone.';
+    errEl.style.display = 'block'; return;
+  }
+
+  const payload = { name, role, manager_id };
+  if (email) payload.email = email;
+  if (password) payload.password = password;
+  if (!isEdit) { payload.username = username; }
+
+  const res = isEdit
+    ? await api(`/users/${editId}`, { method: 'PUT',  body: JSON.stringify(payload) })
+    : await api('/users',           { method: 'POST', body: JSON.stringify(payload) });
+
   if (res.success) {
     closeMod('user-modal');
-    showToast('User created! Share credentials manually.');
+    showToast(isEdit ? 'User updated!' : 'User created! Share credentials manually.');
     loadUsers();
   } else {
-    errEl.textContent = res.message || 'Failed to create user';
+    errEl.textContent = res.message || 'Failed to save user';
     errEl.style.display = 'block';
   }
 }
+
 async function deleteUser(id, name) {
   if (!confirm(`Deactivate user "${name}"? They won't be able to log in.`)) return;
   const res = await api(`/users/${id}`, { method: 'DELETE' });
@@ -1099,6 +1263,16 @@ async function deleteUser(id, name) {
 }
 
 // ========== HELPERS ==========
+const ROLE_LEVELS_FE = {
+  'Manager': 2, 'Sales Manager': 2, 'Regional Manager': 2,
+  'Supervisor': 3, 'Team Lead': 3,
+  'Sales': 4, 'Inside Sales': 4, 'Field Sales': 4, 'Marketing': 4, 'Employee': 4,
+};
+function hierBadge(level) {
+  const m = { 1:['hier-l1','L1 Admin'], 2:['hier-l2','L2 Manager'], 3:['hier-l3','L3 Supervisor'], 4:['hier-l4','L4 Employee'] };
+  const [cls, lbl] = m[level] || m[4];
+  return `<span class="hier-badge ${cls}">${lbl}</span>`;
+}
 function fmt(n) {
   if (!n && n !== 0) return '—';
   if (n >= 10000000) return '₹' + (n/10000000).toFixed(1) + 'Cr';

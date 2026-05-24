@@ -1,17 +1,24 @@
 'use strict';
 const express = require('express');
 const router  = express.Router();
-const { queryAll, queryOne } = require('../db/database');
+const { queryAll, queryOne, getSubordinateIds } = require('../db/database');
 
 router.get('/summary', function(req, res) {
   var user   = req.session.user;
   var isAdmin = user.is_admin ? true : false;
 
-  // Scope all lead queries to current user unless admin
-  var lf  = isAdmin ? '' : ' AND created_by = ?';
-  var lp  = isAdmin ? [] : [user.id];
-  // For JOIN queries, scope via the leads table
-  var ljf = isAdmin ? '' : ' AND l.created_by = ?';
+  // Scope all lead queries: admin sees all; managers/supervisors see their subtree; employees see own.
+  var lf, lp, ljf;
+  if (isAdmin) {
+    lf = ''; lp = []; ljf = '';
+  } else {
+    var hl     = user.hierarchy_level || 4;
+    var subIds = hl < 4 ? getSubordinateIds(user.id) : [user.id];
+    var phdr   = subIds.map(function() { return '?'; }).join(',');
+    lf  = ' AND created_by IN (' + phdr + ')';
+    lp  = subIds;
+    ljf = ' AND l.created_by IN (' + phdr + ')';
+  }
 
   function qOne(sql, extra) {
     return queryOne(sql, lp.concat(extra || []));
@@ -27,7 +34,7 @@ router.get('/summary', function(req, res) {
     overdueFollowups:  queryOne("SELECT COUNT(*) as c FROM leads WHERE next_followup < date('now') AND status NOT IN ('Qualified','Disqualified')" + lf, lp)?.c || 0,
     pendingActivities: isAdmin
       ? queryOne("SELECT COUNT(*) as c FROM activities WHERE status='Pending'")?.c || 0
-      : queryOne("SELECT COUNT(*) as c FROM activities a INNER JOIN leads l ON a.lead_id=l.id WHERE a.status='Pending' AND l.created_by=?", [user.id])?.c || 0,
+      : queryOne("SELECT COUNT(*) as c FROM activities a INNER JOIN leads l ON a.lead_id=l.id WHERE a.status='Pending'" + ljf, lp)?.c || 0,
     proposalsSent: queryOne('SELECT COUNT(*) as c FROM leads WHERE proposal_sent=1' + lf, lp)?.c || 0,
   };
 
@@ -48,10 +55,10 @@ router.get('/summary', function(req, res) {
       monthlyTrend:      queryAll("SELECT strftime('%Y-%m', created_at) as month, COUNT(*) as count, SUM(expected_deal_value) as value FROM leads WHERE 1=1" + lf + " GROUP BY month ORDER BY month DESC LIMIT 6", lp),
       activitySummary: isAdmin
         ? queryAll('SELECT type, COUNT(*) as count FROM activities GROUP BY type')
-        : queryAll('SELECT a.type, COUNT(*) as count FROM activities a INNER JOIN leads l ON a.lead_id=l.id WHERE l.created_by=? GROUP BY a.type', [user.id]),
+        : queryAll('SELECT a.type, COUNT(*) as count FROM activities a INNER JOIN leads l ON a.lead_id=l.id WHERE 1=1' + ljf + ' GROUP BY a.type', lp),
       recentActivities: isAdmin
         ? queryAll('SELECT a.*, l.name as lead_name, l.company FROM activities a LEFT JOIN leads l ON a.lead_id=l.id ORDER BY a.created_at DESC LIMIT 8')
-        : queryAll('SELECT a.*, l.name as lead_name, l.company FROM activities a INNER JOIN leads l ON a.lead_id=l.id WHERE l.created_by=? ORDER BY a.created_at DESC LIMIT 8', [user.id]),
+        : queryAll('SELECT a.*, l.name as lead_name, l.company FROM activities a INNER JOIN leads l ON a.lead_id=l.id WHERE 1=1' + ljf + ' ORDER BY a.created_at DESC LIMIT 8', lp),
     }
   });
 });
