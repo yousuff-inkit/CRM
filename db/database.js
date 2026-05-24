@@ -50,6 +50,9 @@ function createTables() {
     last_contacted TEXT, next_followup TEXT, contact_method TEXT,
     expected_deal_value REAL DEFAULT 0,
     proposal_sent INTEGER DEFAULT 0,
+    budget_confirmed INTEGER DEFAULT 0,
+    need_identified INTEGER DEFAULT 0,
+    implementation_timeline TEXT,
     closed_date TEXT, notes TEXT,
     created_by TEXT,
     created_at TEXT DEFAULT (datetime('now')),
@@ -115,6 +118,9 @@ function migrateDB() {
     'ALTER TABLE users ADD COLUMN password_hash TEXT',
     'ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0',
     'ALTER TABLE leads ADD COLUMN created_by TEXT',
+    'ALTER TABLE leads ADD COLUMN budget_confirmed INTEGER DEFAULT 0',
+    'ALTER TABLE leads ADD COLUMN need_identified INTEGER DEFAULT 0',
+    'ALTER TABLE leads ADD COLUMN implementation_timeline TEXT',
   ];
   migrations.forEach(function(sql) {
     try { db.run(sql); } catch (_) {}

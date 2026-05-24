@@ -274,6 +274,24 @@ td.date-overdue { color: var(--danger); font-weight: 600; }
 .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 10px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* QUALIFICATION CHECKLIST */
+.qual-score-ring { width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.82rem; font-weight: 700; color: #fff; font-family: 'DM Mono', monospace; flex-shrink: 0; }
+.qual-bar { height: 6px; background: var(--border); border-radius: 999px; overflow: hidden; margin-bottom: 14px; }
+.qual-bar-fill { height: 100%; border-radius: 999px; transition: width 0.4s ease; }
+.qual-item { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface2); margin-bottom: 5px; }
+.qual-item.passed { background: var(--accent2-light); border-color: #6ee7b7; }
+.qual-icon { font-size: 0.9rem; margin-top: 1px; flex-shrink: 0; }
+.qual-label { font-size: 0.75rem; font-weight: 600; color: var(--text); line-height: 1.3; }
+.qual-hint { font-size: 0.67rem; color: var(--text3); margin-top: 1px; }
+.qual-toggle { margin-left: auto; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); font-size: 0.68rem; font-weight: 600; cursor: pointer; white-space: nowrap; flex-shrink: 0; color: var(--text2); }
+.qual-toggle:hover { border-color: var(--accent); color: var(--accent); }
+.qual-toggle.unset { border-color: var(--danger); color: var(--danger); background: var(--danger-light); }
+.qual-qualify-btn { width: 100%; padding: 9px; border-radius: 8px; border: none; font-family: 'DM Sans', sans-serif; font-size: 0.82rem; font-weight: 700; cursor: pointer; margin-top: 4px; transition: all 0.15s; }
+.qual-qualify-btn.active { background: var(--accent2); color: #fff; }
+.qual-qualify-btn.active:hover { background: #047857; }
+.qual-qualify-btn.done { background: var(--accent2-light); color: var(--accent2); cursor: default; }
+.qual-qualify-btn.locked { background: var(--surface2); color: var(--text3); cursor: not-allowed; border: 1px solid var(--border); }
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -767,6 +785,10 @@ td.date-overdue { color: var(--danger); font-weight: 600; }
           <select class="form-control" id="lm-proposal">
             <option value="0">No</option><option value="1">Yes</option>
           </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Implementation Timeline</label>
+          <input type="text" class="form-control" id="lm-impl-timeline" placeholder="e.g. Q3 2026, H1 2026">
         </div>
         <div class="form-group full">
           <label class="form-label">Notes</label>
@@ -1547,9 +1569,65 @@ async function openDetail(id) {
       </div>` : '<div class="empty"><p>No history</p></div>'}
     </div>`;
 
-  // Right panel: quick stats
+  // Right panel: qualification checklist + quick info
+  const score    = lead.qualification_score    || 0;
+  const criteria = lead.qualification_criteria || {};
+  const scoreColor = score >= 6 ? 'var(--accent2)' : score >= 4 ? 'var(--accent)' : score >= 3 ? 'var(--warn)' : 'var(--danger)';
+  const scoreBarColor = scoreColor;
+
+  const criteriaOrder = ['budget_confirmed','decision_maker','need_identified','implementation_timeline','company_fit','active_engagement'];
+  const criteriaHTML = criteriaOrder.map(key => {
+    const c = criteria[key];
+    if (!c) return '';
+    let toggleBtn = '';
+    if (c.manual) {
+      if (key === 'implementation_timeline') {
+        if (c.passed) {
+          toggleBtn = `<button class="qual-toggle unset" onclick="patchQual('${lead.id}','implementation_timeline',null)">× Clear</button>`;
+        } else {
+          toggleBtn = `<button class="qual-toggle" onclick="promptTimeline('${lead.id}')">Set →</button>`;
+        }
+      } else {
+        if (c.passed) {
+          toggleBtn = `<button class="qual-toggle unset" onclick="patchQual('${lead.id}','${key}',0)">× Unset</button>`;
+        } else {
+          toggleBtn = `<button class="qual-toggle" onclick="patchQual('${lead.id}','${key}',1)">Confirm</button>`;
+        }
+      }
+    }
+    const subLabel = (key === 'implementation_timeline' && lead.implementation_timeline) ? lead.implementation_timeline : c.hint;
+    return `<div class="qual-item${c.passed ? ' passed' : ''}">
+      <span class="qual-icon">${c.passed ? '✅' : '⬜'}</span>
+      <div style="flex:1;min-width:0">
+        <div class="qual-label">${c.label}</div>
+        <div class="qual-hint">${subLabel}</div>
+      </div>
+      ${toggleBtn}
+    </div>`;
+  }).join('');
+
+  let qualBtnClass, qualBtnLabel, qualBtnClick;
+  if (lead.status === 'Qualified') {
+    qualBtnClass = 'done'; qualBtnLabel = '✅ Qualified'; qualBtnClick = '';
+  } else if (score >= 4) {
+    qualBtnClass = 'active'; qualBtnLabel = 'Mark as Qualified'; qualBtnClick = `onclick="qualifyLead('${lead.id}')"`;
+  } else {
+    qualBtnClass = 'locked'; qualBtnLabel = `🔒 Need ${4 - score} more criteria`; qualBtnClick = '';
+  }
+
   document.getElementById('detail-right').innerHTML = `
-    <div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);margin-bottom:12px">Quick Info</div>
+    <div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);margin-bottom:10px">Qualification Checklist</div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <div class="qual-score-ring" style="background:${scoreColor}">${score}/6</div>
+      <div style="flex:1">
+        <div class="qual-bar"><div class="qual-bar-fill" style="width:${(score/6*100).toFixed(0)}%;background:${scoreBarColor}"></div></div>
+        <div style="font-size:0.68rem;color:var(--text3)">Min. 4/6 required to qualify</div>
+      </div>
+    </div>
+    ${criteriaHTML}
+    <button class="qual-qualify-btn ${qualBtnClass}" ${qualBtnClick} style="margin-top:8px">${qualBtnLabel}</button>
+    <div style="border-top:1px solid var(--border);margin:16px 0"></div>
+    <div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);margin-bottom:10px">Quick Info</div>
     ${[
       ['📅 Date Added', fmtDate(lead.date||lead.created_at)],
       ['🌍 Region', lead.region||'—'],
@@ -1562,7 +1640,7 @@ async function openDetail(id) {
       ['⏰ Follow-up', fmtDate(lead.next_followup)],
       ['📞 Last Contact', fmtDate(lead.last_contacted)],
     ].map(([k,v]) => `
-      <div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:2px">
+      <div style="padding:7px 0;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:2px">
         <div style="font-size:0.68rem;color:var(--text3)">${k}</div>
         <div style="font-size:0.8rem;font-weight:500;color:var(--text)">${v}</div>
       </div>`).join('')}`;
@@ -1595,7 +1673,8 @@ async function openLeadModal(leadData = null) {
 
   // Fill form
   const fields = { 'lm-name':'name','lm-email':'email','lm-phone':'phone','lm-company':'company','lm-job':'job_title',
-    'lm-city':'city','lm-country':'country','lm-notes':'notes','lm-followup':'next_followup','lm-deal-value':'expected_deal_value' };
+    'lm-city':'city','lm-country':'country','lm-notes':'notes','lm-followup':'next_followup','lm-deal-value':'expected_deal_value',
+    'lm-impl-timeline':'implementation_timeline' };
   Object.entries(fields).forEach(([id, key]) => { const el = document.getElementById(id); if(el) el.value = leadData?.[key]||''; });
   ['lm-solution','lm-region','lm-source','lm-type','lm-status','lm-assigned','lm-contact-method','lm-emp-size','lm-revenue'].forEach(id => {
     const el = document.getElementById(id);
@@ -1640,6 +1719,7 @@ async function saveLead() {
     contact_method: document.getElementById('lm-contact-method').value,
     expected_deal_value: parseFloat(document.getElementById('lm-deal-value').value) || 0,
     proposal_sent: document.getElementById('lm-proposal').value,
+    implementation_timeline: document.getElementById('lm-impl-timeline').value || null,
     notes: document.getElementById('lm-notes').value,
   };
   if (!payload.name) { showToast('Name is required', 'error'); return; }
@@ -1657,6 +1737,37 @@ async function deleteLead(id, name) {
   if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
   const res = await api(`/leads/${id}`, { method: 'DELETE' });
   if (res.success) { showToast('Lead deleted'); dashData = null; loadDashboard(); loadLeads(); }
+}
+
+// ========== QUALIFICATION ==========
+async function patchQual(leadId, field, value) {
+  const payload = {};
+  payload[field] = value;
+  const res = await api(`/leads/${leadId}/qualification`, { method: 'PATCH', body: JSON.stringify(payload) });
+  if (res.success) {
+    openDetail(leadId);
+  } else {
+    showToast(res.message || 'Update failed', 'error');
+  }
+}
+
+async function promptTimeline(leadId) {
+  const val = prompt('Enter implementation timeline (e.g. Q3 2026, H1 2026):');
+  if (val === null) return; // cancelled
+  if (!val.trim()) { showToast('Timeline cannot be empty', 'error'); return; }
+  await patchQual(leadId, 'implementation_timeline', val.trim());
+}
+
+async function qualifyLead(leadId) {
+  const res = await api(`/leads/${leadId}`, { method: 'PUT', body: JSON.stringify({ status: 'Qualified', lead_stage: 'Qualification' }) });
+  if (res.success) {
+    showToast('Lead marked as Qualified!');
+    dashData = null;
+    openDetail(leadId);
+    if (document.getElementById('view-leads').classList.contains('active')) loadLeads();
+  } else {
+    showToast(res.message || 'Failed to qualify lead', 'error');
+  }
 }
 
 // ========== ACTIVITY MODAL ==========
