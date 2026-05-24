@@ -127,6 +127,7 @@ function migrateDB() {
     'ALTER TABLE users ADD COLUMN manager_id TEXT',
     'ALTER TABLE users ADD COLUMN hierarchy_level INTEGER DEFAULT 4',
     "ALTER TABLE leads ADD COLUMN currency TEXT DEFAULT 'INR'",
+    "ALTER TABLE leads ADD COLUMN priority TEXT DEFAULT 'Warm'",
   ];
   migrations.forEach(function(sql) {
     try { db.run(sql); } catch (_) {}

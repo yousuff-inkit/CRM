@@ -542,6 +542,12 @@ td.date-overdue { color: var(--danger); font-weight: 600; }
         <select class="filter-select" id="f-assigned" onchange="filterLeads()">
           <option value="">All Assignees</option>
         </select>
+        <select class="filter-select" id="f-priority" onchange="filterLeads()">
+          <option value="">All Priorities</option>
+          <option value="Hot">🔥 Hot</option>
+          <option value="Warm">🌡 Warm</option>
+          <option value="Cold">❄ Cold</option>
+        </select>
         <div class="leads-count" id="leads-count"></div>
       </div>
       <div class="panel">
@@ -550,7 +556,7 @@ td.date-overdue { color: var(--danger); font-weight: 600; }
             <thead>
               <tr>
                 <th>Name</th><th>Company</th><th>Solution</th><th>Region</th>
-                <th>Stage</th><th>Status</th><th>Deal Value</th>
+                <th>Priority</th><th>Stage</th><th>Status</th><th>Deal Value</th>
                 <th>Next Follow-up</th><th>Assigned</th><th></th>
               </tr>
             </thead>
@@ -750,6 +756,14 @@ td.date-overdue { color: var(--danger); font-weight: 600; }
           <select class="form-control" id="lm-status">
             <option>New</option><option>In Progress</option><option>Nurturing</option>
             <option>Qualified</option><option>Disqualified</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Priority</label>
+          <select class="form-control" id="lm-priority">
+            <option value="Hot">🔥 Hot — High urgency, needs immediate attention</option>
+            <option value="Warm" selected>🌡 Warm — Active interest, follow up regularly</option>
+            <option value="Cold">❄ Cold — Low urgency or early stage</option>
           </select>
         </div>
         <div class="form-group">
@@ -1314,6 +1328,11 @@ function statusBadge(s) {
   const m = { New:'blue', 'In Progress':'purple', Nurturing:'warn', Qualified:'green', Disqualified:'red' };
   return `<span class="badge badge-${m[s]||'gray'}">${s}</span>`;
 }
+function priorityBadge(p) {
+  const cfg = { Hot:['red','🔥'], Warm:['warn','🌡'], Cold:['blue','❄'] };
+  const [cls, icon] = cfg[p] || cfg['Warm'];
+  return `<span class="badge badge-${cls}">${icon} ${p||'Warm'}</span>`;
+}
 function stageBadge(s) {
   const m = { Lead:'gray', Qualification:'blue', Opportunity:'green' };
   return `<span class="badge badge-${m[s]||'gray'}">${s}</span>`;
@@ -1430,17 +1449,19 @@ async function loadDashboard() {
 
 // ========== LEADS ==========
 async function loadLeads() {
-  const search = document.getElementById('leads-search')?.value || '';
-  const status = document.getElementById('f-status')?.value || '';
-  const stage = document.getElementById('f-stage')?.value || '';
-  const region = document.getElementById('f-region')?.value || '';
+  const search   = document.getElementById('leads-search')?.value || '';
+  const status   = document.getElementById('f-status')?.value || '';
+  const stage    = document.getElementById('f-stage')?.value || '';
+  const region   = document.getElementById('f-region')?.value || '';
   const assigned = document.getElementById('f-assigned')?.value || '';
+  const priority = document.getElementById('f-priority')?.value || '';
 
   let url = '/leads?';
-  if (search) url += `search=${encodeURIComponent(search)}&`;
-  if (status) url += `status=${encodeURIComponent(status)}&`;
-  if (stage) url += `stage=${encodeURIComponent(stage)}&`;
-  if (region) url += `region=${encodeURIComponent(region)}&`;
+  if (search)   url += `search=${encodeURIComponent(search)}&`;
+  if (status)   url += `status=${encodeURIComponent(status)}&`;
+  if (stage)    url += `stage=${encodeURIComponent(stage)}&`;
+  if (region)   url += `region=${encodeURIComponent(region)}&`;
+  if (priority) url += `priority=${encodeURIComponent(priority)}&`;
   if (assigned) url += `assigned_to=${encodeURIComponent(assigned)}&`;
 
   const res = await api(url);
@@ -1453,7 +1474,7 @@ function filterLeads() { loadLeads(); }
 
 function renderLeadsTable(leads) {
   const tbody = document.getElementById('leads-tbody');
-  if (!leads.length) { tbody.innerHTML = '<tr><td colspan="10"><div class="empty"><div class="empty-icon">👥</div><p>No leads found</p></div></td></tr>'; return; }
+  if (!leads.length) { tbody.innerHTML = '<tr><td colspan="11"><div class="empty"><div class="empty-icon">👥</div><p>No leads found</p></div></td></tr>'; return; }
   tbody.innerHTML = leads.map(l => `
     <tr onclick="openDetail('${l.id}')">
       <td>
@@ -1466,6 +1487,7 @@ function renderLeadsTable(leads) {
       </td>
       <td><div style="font-size:0.75rem;color:var(--text2);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${l.solution_interest||'—'}</div></td>
       <td><span class="badge badge-${l.region==='India'?'blue':l.region==='UAE'?'green':'warn'}">${l.region||'—'}</span></td>
+      <td>${priorityBadge(l.priority)}</td>
       <td>${stageBadge(l.lead_stage)}</td>
       <td>${statusBadge(l.status)}</td>
       <td style="font-family:'DM Mono',monospace;font-size:0.78rem">${fmtCurrency(l.expected_deal_value, l.currency)}</td>
@@ -1517,7 +1539,7 @@ async function loadPipeline() {
             <div style="font-size:0.75rem;color:var(--text2);margin-bottom:6px">${l.company||''}${l.job_title?' · '+l.job_title:''}</div>
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
               <span style="font-size:0.72rem;font-family:'DM Mono',monospace;font-weight:600;color:var(--accent2)">${fmtCurrency(l.expected_deal_value, l.currency)}</span>
-              ${statusBadge(l.status)}
+              <div style="display:flex;gap:4px">${priorityBadge(l.priority)}${statusBadge(l.status)}</div>
             </div>
             <div style="display:flex;align-items:center;justify-content:space-between">
               <span style="font-size:0.7rem;color:var(--text3)">${l.solution_interest||'—'}</span>
@@ -1666,6 +1688,7 @@ async function openDetail(id) {
           ${lead.city||lead.country ? `<span>📍 ${[lead.city,lead.country].filter(Boolean).join(', ')}</span>` : ''}
         </div>
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+          ${priorityBadge(lead.priority)}
           ${statusBadge(lead.status)}
           ${stageBadge(lead.lead_stage)}
           ${lead.region ? `<span class="badge badge-${lead.region==='India'?'blue':lead.region==='UAE'?'green':'warn'}">${lead.region}</span>` : ''}
@@ -1872,9 +1895,9 @@ async function openLeadModal(leadData = null) {
     'lm-city':'city','lm-country':'country','lm-notes':'notes','lm-followup':'next_followup','lm-deal-value':'expected_deal_value',
     'lm-impl-timeline':'implementation_timeline' };
   Object.entries(fields).forEach(([id, key]) => { const el = document.getElementById(id); if(el) el.value = leadData?.[key]||''; });
-  ['lm-solution','lm-region','lm-source','lm-type','lm-status','lm-assigned','lm-contact-method','lm-emp-size','lm-revenue','lm-currency'].forEach(id => {
+  ['lm-solution','lm-region','lm-source','lm-type','lm-status','lm-priority','lm-assigned','lm-contact-method','lm-emp-size','lm-revenue','lm-currency'].forEach(id => {
     const el = document.getElementById(id);
-    const keyMap = { 'lm-solution':'solution_interest','lm-region':'region','lm-source':'lead_source','lm-type':'lead_type','lm-status':'status','lm-assigned':'assigned_to','lm-contact-method':'contact_method','lm-emp-size':'employee_size','lm-revenue':'company_revenue','lm-currency':'currency' };
+    const keyMap = { 'lm-solution':'solution_interest','lm-region':'region','lm-source':'lead_source','lm-type':'lead_type','lm-status':'status','lm-priority':'priority','lm-assigned':'assigned_to','lm-contact-method':'contact_method','lm-emp-size':'employee_size','lm-revenue':'company_revenue','lm-currency':'currency' };
     if(el && leadData?.[keyMap[id]]) el.value = leadData[keyMap[id]];
   });
   document.getElementById('lm-proposal').value = leadData?.proposal_sent ? '1' : '0';
@@ -1915,6 +1938,7 @@ async function saveLead() {
     contact_method: document.getElementById('lm-contact-method').value,
     expected_deal_value: parseFloat(document.getElementById('lm-deal-value').value) || 0,
     currency: document.getElementById('lm-currency').value || 'INR',
+    priority: document.getElementById('lm-priority').value || 'Warm',
     proposal_sent: document.getElementById('lm-proposal').value,
     implementation_timeline: document.getElementById('lm-impl-timeline').value || null,
     notes: document.getElementById('lm-notes').value,
