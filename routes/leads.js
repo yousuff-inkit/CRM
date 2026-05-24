@@ -103,15 +103,16 @@ router.post('/', function(req, res) {
   var today = new Date().toISOString().slice(0, 10);
 
   try {
+    var VALID_CURRENCIES = ['INR', 'AED', 'SAR', 'USD'];
     run(
       `INSERT INTO leads
          (id,date,name,email,phone,company,job_title,city,country,region,
           solution_interest,employee_size,company_revenue,lead_source,assigned_to,
           status,lead_type,lead_stage,next_followup,contact_method,
-          expected_deal_value,proposal_sent,
+          expected_deal_value,currency,proposal_sent,
           budget_confirmed,need_identified,implementation_timeline,
           notes,created_by,created_at,updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`,
       [id, b.date || today, String(b.name).trim(),
        b.email   || null, b.phone   || null,
        b.company || null, b.job_title || null,
@@ -125,6 +126,7 @@ router.post('/', function(req, res) {
        stage,
        b.next_followup  || null, b.contact_method || null,
        toDealValue(b.expected_deal_value),
+       VALID_CURRENCIES.includes(b.currency) ? b.currency : 'INR',
        toFlag(b.proposal_sent),
        toFlag(b.budget_confirmed),
        toFlag(b.need_identified),
@@ -168,13 +170,14 @@ router.put('/:id', function(req, res) {
       );
     }
 
+    var VALID_CURRENCIES = ['INR', 'AED', 'SAR', 'USD'];
     run(
       `UPDATE leads SET
          name=?, email=?, phone=?, company=?, job_title=?,
          city=?, country=?, region=?, solution_interest=?, employee_size=?,
          company_revenue=?, lead_source=?, assigned_to=?, status=?, lead_type=?,
          lead_stage=?, last_contacted=?, next_followup=?, contact_method=?,
-         expected_deal_value=?, proposal_sent=?,
+         expected_deal_value=?, currency=?, proposal_sent=?,
          budget_confirmed=?, need_identified=?, implementation_timeline=?,
          closed_date=?, notes=?,
          updated_at=datetime('now')
@@ -200,6 +203,7 @@ router.put('/:id', function(req, res) {
         b.next_followup  !== undefined ? (b.next_followup  || null) : existing.next_followup,
         optStr(b.contact_method, existing.contact_method),
         b.expected_deal_value !== undefined ? toDealValue(b.expected_deal_value) : existing.expected_deal_value,
+        b.currency !== undefined ? (VALID_CURRENCIES.includes(b.currency) ? b.currency : existing.currency) : existing.currency,
         b.proposal_sent       !== undefined ? toFlag(b.proposal_sent)            : existing.proposal_sent,
         b.budget_confirmed    !== undefined ? toFlag(b.budget_confirmed)         : existing.budget_confirmed,
         b.need_identified     !== undefined ? toFlag(b.need_identified)          : existing.need_identified,

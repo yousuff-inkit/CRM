@@ -765,8 +765,16 @@ td.date-overdue { color: var(--danger); font-weight: 600; }
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Expected Deal Value (₹)</label>
-          <input type="number" class="form-control" id="lm-deal-value" placeholder="0">
+          <label class="form-label">Expected Deal Value</label>
+          <div style="display:flex;gap:8px;">
+            <select class="form-control" id="lm-currency" style="width:90px;flex-shrink:0;">
+              <option value="INR">₹ INR</option>
+              <option value="AED">AED</option>
+              <option value="SAR">SAR</option>
+              <option value="USD">$ USD</option>
+            </select>
+            <input type="number" class="form-control" id="lm-deal-value" placeholder="0" style="flex:1;">
+          </div>
         </div>
         <div class="form-group">
           <label class="form-label">Employee Size</label>
@@ -1279,6 +1287,20 @@ function fmt(n) {
   if (n >= 100000) return '₹' + (n/100000).toFixed(1) + 'L';
   return '₹' + Number(n).toLocaleString('en-IN');
 }
+function fmtCurrency(n, cur) {
+  if (!n && n !== 0) return '—';
+  const c = cur || 'INR';
+  if (c === 'INR') {
+    if (n >= 10000000) return '₹' + (n/10000000).toFixed(1) + 'Cr';
+    if (n >= 100000)   return '₹' + (n/100000).toFixed(1) + 'L';
+    return '₹' + Number(n).toLocaleString('en-IN');
+  }
+  if (c === 'USD') {
+    if (n >= 1000000) return '$' + (n/1000000).toFixed(1) + 'M';
+    return '$' + Number(n).toLocaleString('en-US');
+  }
+  return c + ' ' + Number(n).toLocaleString('en-US');
+}
 function fmtDate(d) {
   if (!d) return '—';
   const dt = new Date(d);
@@ -1401,7 +1423,7 @@ async function loadDashboard() {
       <td>${l.company||'—'}</td>
       <td>${stageBadge(l.lead_stage)}</td>
       <td>${statusBadge(l.status)}</td>
-      <td style="font-family:'DM Mono',monospace">${fmt(l.expected_deal_value)}</td>
+      <td style="font-family:'DM Mono',monospace">${fmtCurrency(l.expected_deal_value, l.currency)}</td>
       <td>${l.assigned_to||'—'}</td>
     </tr>`).join('');
 }
@@ -1446,7 +1468,7 @@ function renderLeadsTable(leads) {
       <td><span class="badge badge-${l.region==='India'?'blue':l.region==='UAE'?'green':'warn'}">${l.region||'—'}</span></td>
       <td>${stageBadge(l.lead_stage)}</td>
       <td>${statusBadge(l.status)}</td>
-      <td style="font-family:'DM Mono',monospace;font-size:0.78rem">${fmt(l.expected_deal_value)}</td>
+      <td style="font-family:'DM Mono',monospace;font-size:0.78rem">${fmtCurrency(l.expected_deal_value, l.currency)}</td>
       <td class="${isOverdue(l.next_followup)?'date-overdue':''}">${fmtDate(l.next_followup)}</td>
       <td style="font-size:0.78rem">${l.assigned_to||'—'}</td>
       <td>
@@ -1494,7 +1516,7 @@ async function loadPipeline() {
             <div style="font-size:0.83rem;font-weight:700;margin-bottom:2px">${l.name}</div>
             <div style="font-size:0.75rem;color:var(--text2);margin-bottom:6px">${l.company||''}${l.job_title?' · '+l.job_title:''}</div>
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-              <span style="font-size:0.72rem;font-family:'DM Mono',monospace;font-weight:600;color:var(--accent2)">${fmt(l.expected_deal_value)}</span>
+              <span style="font-size:0.72rem;font-family:'DM Mono',monospace;font-weight:600;color:var(--accent2)">${fmtCurrency(l.expected_deal_value, l.currency)}</span>
               ${statusBadge(l.status)}
             </div>
             <div style="display:flex;align-items:center;justify-content:space-between">
@@ -1653,7 +1675,7 @@ async function openDetail(id) {
       </div>
       <div style="text-align:right;">
         <div style="font-size:0.72rem;color:var(--text3);margin-bottom:4px">Deal Value</div>
-        <div style="font-size:1.8rem;font-weight:700;font-family:'DM Mono',monospace;color:var(--accent2)">${fmt(lead.expected_deal_value)}</div>
+        <div style="font-size:1.8rem;font-weight:700;font-family:'DM Mono',monospace;color:var(--accent2)">${fmtCurrency(lead.expected_deal_value, lead.currency)}</div>
         ${lead.assigned_to ? `<div style="font-size:0.75rem;color:var(--text3)">Assigned to ${lead.assigned_to}</div>` : ''}
       </div>
     </div>
@@ -1850,9 +1872,9 @@ async function openLeadModal(leadData = null) {
     'lm-city':'city','lm-country':'country','lm-notes':'notes','lm-followup':'next_followup','lm-deal-value':'expected_deal_value',
     'lm-impl-timeline':'implementation_timeline' };
   Object.entries(fields).forEach(([id, key]) => { const el = document.getElementById(id); if(el) el.value = leadData?.[key]||''; });
-  ['lm-solution','lm-region','lm-source','lm-type','lm-status','lm-assigned','lm-contact-method','lm-emp-size','lm-revenue'].forEach(id => {
+  ['lm-solution','lm-region','lm-source','lm-type','lm-status','lm-assigned','lm-contact-method','lm-emp-size','lm-revenue','lm-currency'].forEach(id => {
     const el = document.getElementById(id);
-    const keyMap = { 'lm-solution':'solution_interest','lm-region':'region','lm-source':'lead_source','lm-type':'lead_type','lm-status':'status','lm-assigned':'assigned_to','lm-contact-method':'contact_method','lm-emp-size':'employee_size','lm-revenue':'company_revenue' };
+    const keyMap = { 'lm-solution':'solution_interest','lm-region':'region','lm-source':'lead_source','lm-type':'lead_type','lm-status':'status','lm-assigned':'assigned_to','lm-contact-method':'contact_method','lm-emp-size':'employee_size','lm-revenue':'company_revenue','lm-currency':'currency' };
     if(el && leadData?.[keyMap[id]]) el.value = leadData[keyMap[id]];
   });
   document.getElementById('lm-proposal').value = leadData?.proposal_sent ? '1' : '0';
@@ -1892,6 +1914,7 @@ async function saveLead() {
     next_followup: document.getElementById('lm-followup').value,
     contact_method: document.getElementById('lm-contact-method').value,
     expected_deal_value: parseFloat(document.getElementById('lm-deal-value').value) || 0,
+    currency: document.getElementById('lm-currency').value || 'INR',
     proposal_sent: document.getElementById('lm-proposal').value,
     implementation_timeline: document.getElementById('lm-impl-timeline').value || null,
     notes: document.getElementById('lm-notes').value,
