@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e \"require\\('./routes/users'\\); require\\('./routes/leads'\\); console.log\\('OK'\\)\")"
+    ]
+  }
+}

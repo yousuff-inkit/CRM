@@ -4,7 +4,7 @@ const router  = express.Router();
 const bcrypt  = require('bcryptjs');
 const { v4: uuid } = require('uuid');
 const { run, queryAll, queryOne } = require('../db/database');
-const { requireAdmin } = require('../middleware/auth');
+const { requireAdmin, requireAuth } = require('../middleware/auth');
 
 const ROLE_LEVELS = {
   'Admin': 1,
@@ -13,23 +13,29 @@ const ROLE_LEVELS = {
   'Sales': 4, 'Inside Sales': 4, 'Field Sales': 4, 'Marketing': 4, 'Employee': 4,
 };
 
-router.use(requireAdmin);
+const USER_SELECT = `
+  SELECT u.id, u.name, u.email, u.role, u.username, u.is_admin, u.active,
+         u.manager_id, u.hierarchy_level, u.created_at,
+         m.name AS manager_name, m.role AS manager_role, m.hierarchy_level AS manager_level
+  FROM users u LEFT JOIN users m ON u.manager_id = m.id`;
 
-// GET all users (with manager details via self-join)
-router.get('/', function(_req, res) {
-  var users = queryAll(
-    `SELECT u.id, u.name, u.email, u.role, u.username, u.is_admin, u.active,
-            u.manager_id, u.hierarchy_level, u.created_at,
-            m.name AS manager_name, m.role AS manager_role, m.hierarchy_level AS manager_level
-     FROM users u
-     LEFT JOIN users m ON u.manager_id = m.id
-     ORDER BY COALESCE(u.hierarchy_level, 4), u.name`
-  );
-  res.json({ success: true, data: users });
+// GET users
+// Admin → all users; Manager/Supervisor → direct reportees only; Employee → empty
+router.get('/', requireAuth, function(req, res) {
+  var user = req.session.user;
+  if (user.is_admin) {
+    return res.json({ success: true, data: queryAll(USER_SELECT + ' ORDER BY COALESCE(u.hierarchy_level, 4), u.name') });
+  }
+  var level = user.hierarchy_level || 4;
+  if (level >= 4) {
+    return res.json({ success: true, data: [] });
+  }
+  var reportees = queryAll(USER_SELECT + ' WHERE u.manager_id = ? ORDER BY COALESCE(u.hierarchy_level, 4), u.name', [user.id]);
+  res.json({ success: true, data: reportees });
 });
 
-// POST create user
-router.post('/', async function(req, res) {
+// POST create user — admin only
+router.post('/', requireAdmin, async function(req, res) {
   var username   = (req.body.username || '').trim().toLowerCase();
   var password   = req.body.password || '';
   var name       = (req.body.name || '').trim();
@@ -46,7 +52,6 @@ router.post('/', async function(req, res) {
 
   var hierarchy_level = ROLE_LEVELS[role] || 4;
 
-  // Strict: must report to exactly one level above (L2→L1, L3→L2, L4→L3)
   if (manager_id) {
     var mgr = queryOne('SELECT id, hierarchy_level, role FROM users WHERE id = ? AND active = 1', [manager_id]);
     if (!mgr)
@@ -69,13 +74,7 @@ router.post('/', async function(req, res) {
       'INSERT INTO users (id,name,email,role,username,password_hash,is_admin,active,manager_id,hierarchy_level) VALUES (?,?,?,?,?,?,?,?,?,?)',
       [id, name, emailVal, role, username, hash, 0, 1, manager_id, hierarchy_level]
     );
-    var user = queryOne(
-      `SELECT u.id, u.name, u.email, u.role, u.username, u.is_admin, u.active,
-              u.manager_id, u.hierarchy_level, u.created_at,
-              m.name AS manager_name, m.role AS manager_role
-       FROM users u LEFT JOIN users m ON u.manager_id = m.id WHERE u.id = ?`,
-      [id]
-    );
+    var user = queryOne(USER_SELECT + ' WHERE u.id = ?', [id]);
     res.status(201).json({ success: true, data: user });
   } catch (e) {
     console.error(e);
@@ -83,8 +82,8 @@ router.post('/', async function(req, res) {
   }
 });
 
-// PUT update user (name, role, manager, optional password reset)
-router.put('/:id', async function(req, res) {
+// PUT update user — admin only
+router.put('/:id', requireAdmin, async function(req, res) {
   var target = queryOne('SELECT * FROM users WHERE id = ?', [req.params.id]);
   if (!target) return res.status(404).json({ success: false, message: 'User not found' });
   if (target.is_admin) return res.status(400).json({ success: false, message: 'Cannot edit the admin account' });
@@ -96,7 +95,6 @@ router.put('/:id', async function(req, res) {
 
   var hierarchy_level = ROLE_LEVELS[role] || 4;
 
-  // Strict one-level constraint
   if (manager_id) {
     var mgr = queryOne('SELECT id, hierarchy_level, role FROM users WHERE id = ? AND active = 1', [manager_id]);
     if (!mgr)
@@ -115,13 +113,7 @@ router.put('/:id', async function(req, res) {
       run('UPDATE users SET name=?, role=?, manager_id=?, hierarchy_level=? WHERE id=?',
           [name, role, manager_id, hierarchy_level, req.params.id]);
     }
-    var updated = queryOne(
-      `SELECT u.id, u.name, u.email, u.role, u.username, u.is_admin, u.active,
-              u.manager_id, u.hierarchy_level, u.created_at,
-              m.name AS manager_name, m.role AS manager_role
-       FROM users u LEFT JOIN users m ON u.manager_id = m.id WHERE u.id = ?`,
-      [req.params.id]
-    );
+    var updated = queryOne(USER_SELECT + ' WHERE u.id = ?', [req.params.id]);
     res.json({ success: true, data: updated });
   } catch (e) {
     console.error(e);
@@ -129,8 +121,8 @@ router.put('/:id', async function(req, res) {
   }
 });
 
-// DELETE (deactivate) user
-router.delete('/:id', function(req, res) {
+// DELETE (deactivate) user — admin only
+router.delete('/:id', requireAdmin, function(req, res) {
   var user = queryOne('SELECT * FROM users WHERE id = ?', [req.params.id]);
   if (!user)
     return res.status(404).json({ success: false, message: 'User not found' });

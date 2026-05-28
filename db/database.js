@@ -128,6 +128,9 @@ function migrateDB() {
     'ALTER TABLE users ADD COLUMN hierarchy_level INTEGER DEFAULT 4',
     "ALTER TABLE leads ADD COLUMN currency TEXT DEFAULT 'INR'",
     "ALTER TABLE leads ADD COLUMN priority TEXT DEFAULT 'Warm'",
+    'ALTER TABLE leads ADD COLUMN decision_maker_confirmed INTEGER DEFAULT 0',
+    'ALTER TABLE leads ADD COLUMN size_fit_confirmed INTEGER DEFAULT 0',
+    'ALTER TABLE leads ADD COLUMN engagement_confirmed INTEGER DEFAULT 0',
   ];
   migrations.forEach(function(sql) {
     try { db.run(sql); } catch (_) {}

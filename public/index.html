@@ -245,7 +245,11 @@ select.form-control { cursor: pointer; }
 .stage-step:last-child { border-radius: 0 8px 8px 0; border-right: 1px solid var(--border); }
 .stage-step.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .stage-step.done { background: var(--accent-light); border-color: var(--accent); color: var(--accent); }
-.stage-step:hover:not(.active) { background: var(--surface); color: var(--text); }
+.stage-step:hover:not(.active):not(.stage-locked) { background: var(--surface); color: var(--text); }
+.stage-step.stage-locked { opacity: 0.4; cursor: not-allowed; }
+.qual-item { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+.qual-item:last-child { border-bottom: none; }
+.qual-dot { width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.65rem; flex-shrink: 0; font-weight: 700; }
 
 /* TABS (detail) */
 .detail-tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
@@ -282,23 +286,6 @@ td.date-overdue { color: var(--danger); font-weight: 600; }
 .hier-l4 { background: #f1f5f9;              color: #64748b; }
 .mgr-preview { background: var(--accent-light); border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px 12px; margin-top: 6px; font-size: 0.78rem; }
 
-/* QUALIFICATION CHECKLIST */
-.qual-score-ring { width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.82rem; font-weight: 700; color: #fff; font-family: 'DM Mono', monospace; flex-shrink: 0; }
-.qual-bar { height: 6px; background: var(--border); border-radius: 999px; overflow: hidden; margin-bottom: 14px; }
-.qual-bar-fill { height: 100%; border-radius: 999px; transition: width 0.4s ease; }
-.qual-item { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface2); margin-bottom: 5px; }
-.qual-item.passed { background: var(--accent2-light); border-color: #6ee7b7; }
-.qual-icon { font-size: 0.9rem; margin-top: 1px; flex-shrink: 0; }
-.qual-label { font-size: 0.75rem; font-weight: 600; color: var(--text); line-height: 1.3; }
-.qual-hint { font-size: 0.67rem; color: var(--text3); margin-top: 1px; }
-.qual-toggle { margin-left: auto; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); font-size: 0.68rem; font-weight: 600; cursor: pointer; white-space: nowrap; flex-shrink: 0; color: var(--text2); }
-.qual-toggle:hover { border-color: var(--accent); color: var(--accent); }
-.qual-toggle.unset { border-color: var(--danger); color: var(--danger); background: var(--danger-light); }
-.qual-qualify-btn { width: 100%; padding: 9px; border-radius: 8px; border: none; font-family: 'DM Sans', sans-serif; font-size: 0.82rem; font-weight: 700; cursor: pointer; margin-top: 4px; transition: all 0.15s; }
-.qual-qualify-btn.active { background: var(--accent2); color: #fff; }
-.qual-qualify-btn.active:hover { background: #047857; }
-.qual-qualify-btn.done { background: var(--accent2-light); color: var(--accent2); cursor: default; }
-.qual-qualify-btn.locked { background: var(--surface2); color: var(--text3); cursor: not-allowed; border: 1px solid var(--border); }
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
@@ -651,10 +638,10 @@ td.date-overdue { color: var(--danger); font-weight: 600; }
       </div>
     </div>
 
-    <!-- ======== USERS (Admin only) ======== -->
+    <!-- ======== USERS ======== -->
     <div class="view" id="view-users">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-        <div></div>
+        <div class="topbar-left" style="font-size:1rem;font-weight:600;color:var(--text)">Users</div>
         <button class="topbar-btn primary" onclick="openUserModal()">＋ Create User</button>
       </div>
       <div class="panel">
@@ -1005,7 +992,8 @@ function showApp() {
   document.getElementById('sidebar-name').textContent   = currentUser.name;
   document.getElementById('sidebar-role').textContent   = currentUser.role + (currentUser.is_admin ? ' (Admin)' : '');
   // Show admin nav if admin
-  if (currentUser.is_admin) document.getElementById('admin-nav').style.display = '';
+  if (currentUser.is_admin || (currentUser.hierarchy_level || 4) < 4)
+    document.getElementById('admin-nav').style.display = '';
 }
 async function doLogin() {
   const btn      = document.getElementById('login-btn');
@@ -1098,14 +1086,25 @@ async function api(path, opts = {}) {
   return res.json();
 }
 
-// ========== USER MANAGEMENT (Admin) ==========
+// ========== USER MANAGEMENT ==========
 async function loadUsers() {
   const res = await api('/users');
   if (!res.success) return;
   const users = res.data;
+  const isAdmin = currentUser.is_admin;
+
+  // Show/hide Create User button based on role
+  const createBtn = document.querySelector('#view-users .topbar-btn.primary');
+  if (createBtn) createBtn.style.display = isAdmin ? '' : 'none';
+
+  // Update section heading
+  const heading = document.querySelector('#view-users .topbar-left');
+  if (heading) heading.textContent = isAdmin ? 'All Users' : 'My Team';
+
   const tbody = document.getElementById('users-tbody');
   if (!users.length) {
-    tbody.innerHTML = '<tr><td colspan="7"><div class="empty"><div class="empty-icon">🔑</div><p>No users yet</p></div></td></tr>';
+    const msg = isAdmin ? 'No users yet' : 'No direct reportees';
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty"><div class="empty-icon">🔑</div><p>${msg}</p></div></td></tr>`;
     return;
   }
   tbody.innerHTML = users.map(u => `
@@ -1122,9 +1121,9 @@ async function loadUsers() {
       </td>
       <td><span class="badge ${u.active ? 'badge-green' : 'badge-red'}">${u.active ? 'Active' : 'Inactive'}</span>${u.is_admin ? ' <span class="badge badge-purple">Admin</span>' : ''}</td>
       <td style="display:flex;gap:4px;">
-        ${u.is_admin ? '' : `
+        ${(isAdmin && !u.is_admin) ? `
           <button class="btn-icon" title="Edit user" onclick="openEditUserModal('${u.id}')">✏️</button>
-          <button class="btn-icon" style="color:var(--danger)" title="Deactivate" onclick="deleteUser('${u.id}','${u.name}')">🗑️</button>`}
+          <button class="btn-icon" style="color:var(--danger)" title="Deactivate" onclick="deleteUser('${u.id}','${u.name}')">🗑️</button>` : ''}
       </td>
     </tr>`).join('');
 }
@@ -1667,11 +1666,39 @@ async function loadFollowups() {
 }
 
 // ========== LEAD DETAIL ==========
+function computeQualScore(lead) {
+  const budget   = lead.budget_confirmed === 1;
+  const dm       = lead.decision_maker_confirmed === 1;
+  const need     = lead.need_identified === 1;
+  const timeline = !!(lead.implementation_timeline && lead.implementation_timeline.trim());
+  const size     = lead.size_fit_confirmed === 1;
+  const engage   = lead.engagement_confirmed === 1;
+  const score    = [budget, dm, need, timeline, size, engage].filter(Boolean).length;
+  return { score, budget, decision_maker: dm, need, timeline, size, engagement: engage };
+}
+
+async function patchQual(leadId, fields) {
+  const res = await api(`/leads/${leadId}/qualification`, { method: 'PATCH', body: JSON.stringify(fields) });
+  if (res.success) {
+    openDetail(leadId);
+  } else {
+    showToast(res.message || 'Failed to update qualification');
+  }
+}
+
+async function promptTimeline(leadId) {
+  const current = currentDetailLead?.implementation_timeline || '';
+  const val = prompt('Enter implementation timeline (e.g., Q3 2026, H1 2026):', current);
+  if (val === null) return;
+  await patchQual(leadId, { implementation_timeline: val.trim() || null });
+}
+
 async function openDetail(id) {
   const res = await api(`/leads/${id}`);
   if (!res.success) return;
   const lead = res.data;
   currentDetailLead = lead;
+  const qs = computeQualScore(lead);
 
   document.getElementById('detail-modal-title').textContent = lead.name;
 
@@ -1705,11 +1732,20 @@ async function openDetail(id) {
     <div style="margin-top:14px;">
       <div style="font-size:0.7rem;color:var(--text3);margin-bottom:6px">Pipeline Stage</div>
       <div class="stage-steps">
-        ${['Lead','Qualification','Opportunity'].map((s,i) => {
-          const stages = ['Lead','Qualification','Opportunity'];
-          const curr = stages.indexOf(lead.lead_stage);
-          const idx = stages.indexOf(s);
-          return `<div class="stage-step ${idx === curr ? 'active' : idx < curr ? 'done' : ''}" onclick="updateStage('${lead.id}','${s}')">${s}</div>`;
+        ${['Lead','Qualification','Opportunity','Proposal','Negotiation','Closed Won','Closed Lost'].map((s) => {
+          const allS = ['Lead','Qualification','Opportunity','Proposal','Negotiation','Closed Won','Closed Lost'];
+          const currIdx = allS.indexOf(lead.lead_stage);
+          const sIdx = allS.indexOf(s);
+          const isActive = sIdx === currIdx;
+          const isDone = sIdx < currIdx;
+          const inLead = lead.lead_stage === 'Lead';
+          const isLocked = inLead
+            ? (qs.score < 4 && s !== 'Lead')
+            : s === 'Lead';
+          const cls = 'stage-step' + (isActive ? ' active' : isDone ? ' done' : '') + (isLocked ? ' stage-locked' : '');
+          const click = isLocked ? '' : `onclick="updateStage('${lead.id}','${s}')"`;
+          const tip = inLead && isLocked ? `Score ${qs.score}/6 — need 4 to unlock` : s;
+          return '<div class="' + cls + '" ' + click + ' title="' + tip + '">' + s + '</div>';
         }).join('')}
       </div>
     </div>`;
@@ -1788,64 +1824,61 @@ async function openDetail(id) {
       </div>` : '<div class="empty"><p>No history</p></div>'}
     </div>`;
 
-  // Right panel: qualification checklist + quick info
-  const score    = lead.qualification_score    || 0;
-  const criteria = lead.qualification_criteria || {};
-  const scoreColor = score >= 6 ? 'var(--accent2)' : score >= 4 ? 'var(--accent)' : score >= 3 ? 'var(--warn)' : 'var(--danger)';
-  const scoreBarColor = scoreColor;
+  const scoreColor   = qs.score >= 4 ? 'var(--accent2)' : qs.score >= 2 ? 'var(--warn)' : 'var(--danger)';
+  const scoreBg      = qs.score >= 4 ? 'var(--accent2-light)' : qs.score >= 2 ? 'var(--warn-light)' : 'var(--danger-light)';
+  const isQualLocked = (lead.lead_stage || 'Lead') !== 'Lead';
 
-  const criteriaOrder = ['budget_confirmed','decision_maker','need_identified','implementation_timeline','company_fit','active_engagement'];
-  const criteriaHTML = criteriaOrder.map(key => {
-    const c = criteria[key];
-    if (!c) return '';
-    let toggleBtn = '';
-    if (c.manual) {
-      if (key === 'implementation_timeline') {
-        if (c.passed) {
-          toggleBtn = `<button class="qual-toggle unset" onclick="patchQual('${lead.id}','implementation_timeline',null)">× Clear</button>`;
-        } else {
-          toggleBtn = `<button class="qual-toggle" onclick="promptTimeline('${lead.id}')">Set →</button>`;
-        }
-      } else {
-        if (c.passed) {
-          toggleBtn = `<button class="qual-toggle unset" onclick="patchQual('${lead.id}','${key}',0)">× Unset</button>`;
-        } else {
-          toggleBtn = `<button class="qual-toggle" onclick="patchQual('${lead.id}','${key}',1)">Confirm</button>`;
-        }
-      }
+  // Store handlers separately so addEventListener can reference them (avoids inline onclick issues)
+  const qualData = [
+    { label: 'Budget Confirmed',          met: qs.budget,         type: 'toggle',
+      fn: function() { patchQual(lead.id, {budget_confirmed:          lead.budget_confirmed          ? 0 : 1}); } },
+    { label: 'Decision Maker Identified', met: qs.decision_maker, type: 'toggle',
+      fn: function() { patchQual(lead.id, {decision_maker_confirmed:  lead.decision_maker_confirmed  ? 0 : 1}); } },
+    { label: 'Business Need Identified',  met: qs.need,           type: 'toggle',
+      fn: function() { patchQual(lead.id, {need_identified:           lead.need_identified           ? 0 : 1}); } },
+    { label: 'Implementation Timeline',   met: qs.timeline,       type: 'timeline', extra: lead.implementation_timeline || '',
+      fn: function() { promptTimeline(lead.id); } },
+    { label: 'Company Size Fit',          met: qs.size,           type: 'toggle',
+      fn: function() { patchQual(lead.id, {size_fit_confirmed:        lead.size_fit_confirmed        ? 0 : 1}); } },
+    { label: 'Active Engagement',         met: qs.engagement,     type: 'toggle',
+      fn: function() { patchQual(lead.id, {engagement_confirmed:      lead.engagement_confirmed      ? 0 : 1}); } },
+  ];
+
+  const qualRowsHtml = qualData.map(function(item, idx) {
+    var dotBg  = item.met ? 'var(--accent2-light)' : 'var(--danger-light)';
+    var dotClr = item.met ? 'var(--accent2)'       : 'var(--danger)';
+    var dot = '<div class="qual-dot" style="background:' + dotBg + ';color:' + dotClr + '">' + (item.met ? '✓' : '✗') + '</div>';
+    var lbl = '<div style="flex:1;font-size:0.76rem;color:' + (item.met ? 'var(--text)' : 'var(--text2)') + '">' + item.label + '</div>';
+    var tag;
+    if (isQualLocked) {
+      tag = '<span style="font-size:0.65rem;color:var(--text3)">🔒</span>';
+    } else if (item.type === 'timeline') {
+      tag = item.extra
+        ? '<span style="font-size:0.68rem;color:var(--accent)">' + item.extra + ' ✎</span>'
+        : '<span style="font-size:0.65rem;color:var(--text3)">✎ set</span>';
+    } else {
+      tag = '<span style="font-size:0.65rem;color:var(--text3)">✎ ' + (item.met ? 'unset' : 'set') + '</span>';
     }
-    const subLabel = (key === 'implementation_timeline' && lead.implementation_timeline) ? lead.implementation_timeline : c.hint;
-    return `<div class="qual-item${c.passed ? ' passed' : ''}">
-      <span class="qual-icon">${c.passed ? '✅' : '⬜'}</span>
-      <div style="flex:1;min-width:0">
-        <div class="qual-label">${c.label}</div>
-        <div class="qual-hint">${subLabel}</div>
-      </div>
-      ${toggleBtn}
-    </div>`;
+    var clickable = !isQualLocked ? ' data-qi="' + idx + '" style="cursor:pointer"' : '';
+    return '<div class="qual-item"' + clickable + '>' + dot + lbl + tag + '</div>';
   }).join('');
 
-  let qualBtnClass, qualBtnLabel, qualBtnClick;
-  if (lead.status === 'Qualified') {
-    qualBtnClass = 'done'; qualBtnLabel = '✅ Qualified'; qualBtnClick = '';
-  } else if (score >= 4) {
-    qualBtnClass = 'active'; qualBtnLabel = 'Mark as Qualified'; qualBtnClick = `onclick="qualifyLead('${lead.id}')"`;
-  } else {
-    qualBtnClass = 'locked'; qualBtnLabel = `🔒 Need ${4 - score} more criteria`; qualBtnClick = '';
-  }
+  var statusMsg = isQualLocked
+    ? '🔒 Locked at ' + lead.lead_stage + ' stage — criteria editable only in Lead stage'
+    : (qs.score >= 4 ? '✓ Eligible for all pipeline stages' : 'Need ' + (4 - qs.score) + ' more to unlock pipeline');
 
   document.getElementById('detail-right').innerHTML = `
-    <div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);margin-bottom:10px">Qualification Checklist</div>
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-      <div class="qual-score-ring" style="background:${scoreColor}">${score}/6</div>
-      <div style="flex:1">
-        <div class="qual-bar"><div class="qual-bar-fill" style="width:${(score/6*100).toFixed(0)}%;background:${scoreBarColor}"></div></div>
-        <div style="font-size:0.68rem;color:var(--text3)">Min. 4/6 required to qualify</div>
+    <div style="margin-bottom:18px">
+      <div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);margin-bottom:8px">Qualification Score</div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <div style="font-size:1.5rem;font-weight:700;color:${scoreColor};font-family:'DM Mono',monospace">${qs.score}/6</div>
+        <div style="flex:1;height:6px;border-radius:3px;background:var(--border);overflow:hidden">
+          <div style="height:100%;width:${Math.round(qs.score/6*100)}%;background:${scoreColor};border-radius:3px"></div>
+        </div>
       </div>
+      ${qualRowsHtml}
+      <div style="margin-top:8px;font-size:0.72rem;padding:6px 10px;border-radius:6px;background:${scoreBg};color:${scoreColor}">${statusMsg}</div>
     </div>
-    ${criteriaHTML}
-    <button class="qual-qualify-btn ${qualBtnClass}" ${qualBtnClick} style="margin-top:8px">${qualBtnLabel}</button>
-    <div style="border-top:1px solid var(--border);margin:16px 0"></div>
     <div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);margin-bottom:10px">Quick Info</div>
     ${[
       ['📅 Date Added', fmtDate(lead.date||lead.created_at)],
@@ -1864,6 +1897,12 @@ async function openDetail(id) {
         <div style="font-size:0.8rem;font-weight:500;color:var(--text)">${v}</div>
       </div>`).join('')}`;
 
+  // Attach click handlers via addEventListener (more reliable than inline onclick in dynamic innerHTML)
+  document.querySelectorAll('#detail-right [data-qi]').forEach(function(el) {
+    var idx = parseInt(el.getAttribute('data-qi'), 10);
+    if (qualData[idx]) el.addEventListener('click', qualData[idx].fn);
+  });
+
   openMod('detail-modal');
 }
 
@@ -1875,7 +1914,19 @@ function switchDetailTab(name, el) {
 }
 
 async function updateStage(leadId, stage) {
-  await api(`/leads/${leadId}/stage`, { method: 'PATCH', body: JSON.stringify({ lead_stage: stage, changed_by: 'User' }) });
+  if (currentDetailLead) {
+    if (currentDetailLead.lead_stage === 'Lead') {
+      const qs = computeQualScore(currentDetailLead);
+      if (qs.score < 4) {
+        showToast(`Score ${qs.score}/6 — complete at least 4 criteria to unlock pipeline`);
+        return;
+      }
+    } else if (stage === 'Lead') {
+      showToast('Cannot move back to Lead stage once advanced');
+      return;
+    }
+  }
+  await api(`/leads/${leadId}/stage`, { method: 'PATCH', body: JSON.stringify({ lead_stage: stage }) });
   openDetail(leadId);
   showToast(`Stage updated to ${stage}`);
 }
@@ -1902,9 +1953,16 @@ async function openLeadModal(leadData = null) {
   });
   document.getElementById('lm-proposal').value = leadData?.proposal_sent ? '1' : '0';
 
-  // Stage selector
-  const stageSteps = document.querySelectorAll('#lm-stage-selector .stage-step');
-  stageSteps.forEach(s => s.classList.toggle('active', s.dataset.stage === (leadData?.lead_stage || 'Lead')));
+  // Stage selector — hide entirely when creating (new leads always start as Lead)
+  const stageSel = document.getElementById('lm-stage-selector');
+  const stageWrapper = stageSel.parentElement;
+  if (!leadData) {
+    stageWrapper.style.display = 'none';
+    stageSel.querySelectorAll('.stage-step').forEach(s => s.classList.toggle('active', s.dataset.stage === 'Lead'));
+  } else {
+    stageWrapper.style.display = '';
+    stageSel.querySelectorAll('.stage-step').forEach(s => s.classList.toggle('active', s.dataset.stage === leadData.lead_stage));
+  }
 
   openMod('lead-modal');
 }
@@ -1958,37 +2016,6 @@ async function deleteLead(id, name) {
   if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
   const res = await api(`/leads/${id}`, { method: 'DELETE' });
   if (res.success) { showToast('Lead deleted'); dashData = null; loadDashboard(); loadLeads(); }
-}
-
-// ========== QUALIFICATION ==========
-async function patchQual(leadId, field, value) {
-  const payload = {};
-  payload[field] = value;
-  const res = await api(`/leads/${leadId}/qualification`, { method: 'PATCH', body: JSON.stringify(payload) });
-  if (res.success) {
-    openDetail(leadId);
-  } else {
-    showToast(res.message || 'Update failed', 'error');
-  }
-}
-
-async function promptTimeline(leadId) {
-  const val = prompt('Enter implementation timeline (e.g. Q3 2026, H1 2026):');
-  if (val === null) return; // cancelled
-  if (!val.trim()) { showToast('Timeline cannot be empty', 'error'); return; }
-  await patchQual(leadId, 'implementation_timeline', val.trim());
-}
-
-async function qualifyLead(leadId) {
-  const res = await api(`/leads/${leadId}`, { method: 'PUT', body: JSON.stringify({ status: 'Qualified', lead_stage: 'Qualification' }) });
-  if (res.success) {
-    showToast('Lead marked as Qualified!');
-    dashData = null;
-    openDetail(leadId);
-    if (document.getElementById('view-leads').classList.contains('active')) loadLeads();
-  } else {
-    showToast(res.message || 'Failed to qualify lead', 'error');
-  }
 }
 
 // ========== ACTIVITY MODAL ==========

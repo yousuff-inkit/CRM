@@ -14,18 +14,6 @@ function toFlag(val) {
   return (val === true || val === 1 || val === '1' || val === 'true') ? 1 : 0;
 }
 
-function computeQualScore(lead, contacts, activities) {
-  var criteria = {
-    budget_confirmed:        { label: 'Budget Confirmed',            hint: 'Budget allocated/approved by the company', manual: true,  passed: lead.budget_confirmed === 1 },
-    decision_maker:          { label: 'Decision Maker Identified',   hint: 'Contact with is_decision_maker flag in Contacts tab', manual: false, passed: contacts.some(function(c) { return c.is_decision_maker === 1; }) },
-    need_identified:         { label: 'Business Need Identified',    hint: 'Clear pain point mapped to the SAP solution', manual: true,  passed: lead.need_identified === 1 },
-    implementation_timeline: { label: 'Implementation Timeline Set', hint: 'Concrete go-live target (e.g. Q3 2026)', manual: true,  passed: !!lead.implementation_timeline },
-    company_fit:             { label: 'Company Size Fit',            hint: 'Employee size & revenue filled (mid-market+)', manual: false, passed: !!(lead.employee_size && lead.company_revenue) },
-    active_engagement:       { label: 'Active Engagement',           hint: 'Lead contacted + at least one completed activity', manual: false, passed: !!(lead.last_contacted && activities.some(function(a) { return a.status === 'Completed'; })) },
-  };
-  var score = Object.keys(criteria).filter(function(k) { return criteria[k].passed; }).length;
-  return { criteria: criteria, score: score };
-}
 function toDealValue(val) {
   const n = parseFloat(val);
   return (isNaN(n) || n < 0) ? 0 : n;
@@ -87,9 +75,6 @@ router.get('/:id', function(req, res) {
   lead.activities = queryAll('SELECT * FROM activities WHERE lead_id = ? ORDER BY scheduled_at DESC', [req.params.id]);
   lead.contacts   = queryAll('SELECT * FROM contacts   WHERE lead_id = ? ORDER BY is_decision_maker DESC', [req.params.id]);
   lead.history    = queryAll('SELECT * FROM pipeline_history WHERE lead_id = ? ORDER BY changed_at DESC', [req.params.id]);
-  var qual = computeQualScore(lead, lead.contacts, lead.activities);
-  lead.qualification_score    = qual.score;
-  lead.qualification_criteria = qual.criteria;
   res.json({ success: true, data: lead });
 });
 
@@ -180,7 +165,8 @@ router.put('/:id', function(req, res) {
          company_revenue=?, lead_source=?, assigned_to=?, status=?, lead_type=?,
          lead_stage=?, last_contacted=?, next_followup=?, contact_method=?,
          expected_deal_value=?, currency=?, priority=?, proposal_sent=?,
-         budget_confirmed=?, need_identified=?, implementation_timeline=?,
+         budget_confirmed=?, decision_maker_confirmed=?, need_identified=?,
+         implementation_timeline=?, size_fit_confirmed=?, engagement_confirmed=?,
          closed_date=?, notes=?,
          updated_at=datetime('now')
        WHERE id=?`,
@@ -207,17 +193,54 @@ router.put('/:id', function(req, res) {
         b.expected_deal_value !== undefined ? toDealValue(b.expected_deal_value) : existing.expected_deal_value,
         b.currency !== undefined ? (VALID_CURRENCIES.includes(b.currency) ? b.currency : existing.currency) : existing.currency,
         b.priority !== undefined ? (VALID_PRIORITIES.includes(b.priority) ? b.priority : existing.priority) : existing.priority,
-        b.proposal_sent       !== undefined ? toFlag(b.proposal_sent)            : existing.proposal_sent,
-        b.budget_confirmed    !== undefined ? toFlag(b.budget_confirmed)         : existing.budget_confirmed,
-        b.need_identified     !== undefined ? toFlag(b.need_identified)          : existing.need_identified,
-        b.implementation_timeline !== undefined ? (b.implementation_timeline || null) : existing.implementation_timeline,
-        b.closed_date         !== undefined ? (b.closed_date || null)            : existing.closed_date,
-        b.notes               !== undefined ? (b.notes       || null)            : existing.notes,
+        b.proposal_sent              !== undefined ? toFlag(b.proposal_sent)             : existing.proposal_sent,
+        b.budget_confirmed           !== undefined ? toFlag(b.budget_confirmed)          : existing.budget_confirmed,
+        b.decision_maker_confirmed   !== undefined ? toFlag(b.decision_maker_confirmed)  : existing.decision_maker_confirmed,
+        b.need_identified            !== undefined ? toFlag(b.need_identified)           : existing.need_identified,
+        b.implementation_timeline    !== undefined ? (b.implementation_timeline || null) : existing.implementation_timeline,
+        b.size_fit_confirmed         !== undefined ? toFlag(b.size_fit_confirmed)        : existing.size_fit_confirmed,
+        b.engagement_confirmed       !== undefined ? toFlag(b.engagement_confirmed)      : existing.engagement_confirmed,
+        b.closed_date                !== undefined ? (b.closed_date || null)             : existing.closed_date,
+        b.notes                      !== undefined ? (b.notes       || null)             : existing.notes,
         req.params.id,
       ]
     );
   } catch (e) {
     return res.status(500).json({ success: false, message: 'Failed to update lead' });
+  }
+
+  res.json({ success: true, data: queryOne('SELECT * FROM leads WHERE id = ?', [req.params.id]) });
+});
+
+// ── PATCH qualification criteria ──────────────────────────────────────────────
+router.patch('/:id/qualification', function(req, res) {
+  var b        = req.body;
+  var user     = req.session.user;
+  var existing = queryOne('SELECT * FROM leads WHERE id = ?', [req.params.id]);
+  if (!existing) return res.status(404).json({ success: false, message: 'Lead not found' });
+
+  if (!user.is_admin && existing.created_by !== user.id)
+    return res.status(403).json({ success: false, message: 'Access denied' });
+
+  // Build a dynamic SET clause so only the sent fields are updated.
+  // This avoids failures when columns were just added via migration (server not yet restarted).
+  var textFields = ['implementation_timeline'];
+  var boolFields = ['budget_confirmed','decision_maker_confirmed','need_identified','size_fit_confirmed','engagement_confirmed'];
+  var sets = [], params = [];
+  boolFields.forEach(function(f) {
+    if (b[f] !== undefined) { sets.push(f + '=?'); params.push(toFlag(b[f])); }
+  });
+  textFields.forEach(function(f) {
+    if (b[f] !== undefined) { sets.push(f + '=?'); params.push(b[f] || null); }
+  });
+  if (!sets.length) return res.json({ success: true, data: existing });
+  sets.push("updated_at=datetime('now')");
+  params.push(req.params.id);
+
+  try {
+    run('UPDATE leads SET ' + sets.join(',') + ' WHERE id=?', params);
+  } catch (e) {
+    return res.status(500).json({ success: false, message: 'Failed to update: ' + e.message });
   }
 
   res.json({ success: true, data: queryOne('SELECT * FROM leads WHERE id = ?', [req.params.id]) });
@@ -254,41 +277,6 @@ router.patch('/:id/stage', function(req, res) {
   res.json({ success: true, data: queryOne('SELECT * FROM leads WHERE id = ?', [req.params.id]) });
 });
 
-// ── PATCH qualification criteria (manual toggles) ────────────────────────────
-router.patch('/:id/qualification', function(req, res) {
-  var user     = req.session.user;
-  var existing = queryOne('SELECT * FROM leads WHERE id = ?', [req.params.id]);
-  if (!existing) return res.status(404).json({ success: false, message: 'Lead not found' });
-
-  if (!user.is_admin && existing.created_by !== user.id)
-    return res.status(403).json({ success: false, message: 'Access denied' });
-
-  var b = req.body;
-  var setClauses = [];
-  var vals = [];
-
-  if (b.budget_confirmed !== undefined)        { setClauses.push('budget_confirmed=?');        vals.push(toFlag(b.budget_confirmed)); }
-  if (b.need_identified !== undefined)         { setClauses.push('need_identified=?');         vals.push(toFlag(b.need_identified)); }
-  if (b.implementation_timeline !== undefined) { setClauses.push('implementation_timeline=?'); vals.push(b.implementation_timeline || null); }
-
-  if (!setClauses.length)
-    return res.status(400).json({ success: false, message: 'No qualification fields provided' });
-
-  vals.push(req.params.id);
-  try {
-    run('UPDATE leads SET ' + setClauses.join(', ') + ", updated_at=datetime('now') WHERE id=?", vals);
-  } catch (e) {
-    return res.status(500).json({ success: false, message: 'Failed to update qualification criteria' });
-  }
-
-  var updated    = queryOne('SELECT * FROM leads WHERE id = ?', [req.params.id]);
-  var contacts   = queryAll('SELECT * FROM contacts   WHERE lead_id = ?', [req.params.id]);
-  var activities = queryAll('SELECT * FROM activities WHERE lead_id = ?', [req.params.id]);
-  var qual = computeQualScore(updated, contacts, activities);
-  updated.qualification_score    = qual.score;
-  updated.qualification_criteria = qual.criteria;
-  res.json({ success: true, data: updated });
-});
 
 // ── DELETE lead (atomic cascade) ──────────────────────────────────────────────
 router.delete('/:id', function(req, res) {
